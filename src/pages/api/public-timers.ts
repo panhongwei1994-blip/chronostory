@@ -174,7 +174,6 @@ export const DELETE: APIRoute = async ({ request, locals }) => {
   const server = url.searchParams.get('server') as ServerRegion;
   const id = url.searchParams.get('id');
 
-  isCleared = true;
   const db = (locals as any)?.runtime?.env?.DB;
 
   if (id) {
