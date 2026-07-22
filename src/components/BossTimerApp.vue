@@ -95,21 +95,66 @@
         </div>
       </div>
 
-      <!-- 动态自适应网格矩阵 (支持左键一键报时，右键长按清空) -->
+      <!-- 动态自适应网格矩阵 (支持左键一键报时，右键/独立✕按钮清空) -->
       <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap:6px;">
         <button
           v-for="ch in matrixChannelList"
           :key="ch"
           class="ch-matrix-item-btn"
           :class="getChMatrixClass(ch)"
+          style="position:relative;"
           @click="quickSelectCh(ch)"
           @contextmenu.prevent="cancelChMatrix(ch)"
-          :title="`左键一键开启/重置倒计时，右键清空CH ${ch}`"
+          :title="`左键开启/重置，右键或点击右上角✕清空CH ${ch}`"
         >
+          <!-- 独立 ✕ 删除按钮 -->
+          <span
+            v-if="getChMatrixItem(ch) && getChMatrixItem(ch)?.started"
+            class="matrix-btn-del-x"
+            style="position:absolute; top:2px; right:2px; font-size:10px; color:#ef4444; font-weight:900; width:14px; height:14px; line-height:13px; text-align:center; border-radius:50%; background:rgba(0,0,0,0.6); border:1px solid rgba(239,68,68,0.5); cursor:pointer;"
+            @click.stop="cancelChMatrix(ch)"
+            title="清空当前频道倒计时"
+          >✕</span>
+
           <span style="font-size:11px; font-weight:900;">CH {{ ch }}</span>
           <span v-if="getChMatrixTimeText(ch)" style="font-size:9px; opacity:0.9; margin-top:2px;">{{ getChMatrixTimeText(ch) }}</span>
         </button>
       </div>
+    </div>
+
+    <!-- ✍️ 手动指定频道号提交表单 -->
+    <div class="channel-submit-form" style="margin-bottom: 16px; background:rgba(15, 23, 42, 0.7); border:1px solid rgba(255,255,255,0.15); border-radius:10px; padding:12px 14px;">
+      <div class="submit-form-label" style="font-size:12px; font-weight:800; color:#38bdf8; margin-bottom:8px;">✍️ 手动指定频道号提交</div>
+      <div class="submit-form-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <div class="submit-input-group" style="display:flex; align-items:center; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.25); border-radius:6px; padding:2px 6px;">
+          <span class="submit-input-prefix" style="font-size:12px; font-weight:800; color:#cbd5e1; margin-right:4px;">CH</span>
+          <input
+            type="number"
+            class="submit-channel-input"
+            v-model.number="newChannelNum"
+            placeholder="频道号"
+            style="width:70px; background:transparent; border:none; color:#fff; font-weight:900; font-size:12px; outline:none;"
+            @keyup.enter="submitNewChannel"
+          />
+        </div>
+
+        <div class="submit-minutes-group" style="display:flex; align-items:center; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.25); border-radius:6px; padding:2px 6px;">
+          <span class="submit-minutes-prefix" style="font-size:12px; font-weight:800; color:#cbd5e1; margin-right:4px;">⏱️ 分钟</span>
+          <input
+            type="number"
+            class="submit-minutes-input"
+            v-model.number="customMinutes"
+            :placeholder="`默认 ${currentBossMinutes}`"
+            style="width:80px; background:transparent; border:none; color:#fff; font-weight:900; font-size:12px; outline:none;"
+            @keyup.enter="submitNewChannel"
+          />
+        </div>
+
+        <button class="btn-submit-channel" @click="submitNewChannel" style="background:linear-gradient(135deg, #2563eb, #1d4ed8); border:1px solid #60a5fa; color:#fff; font-size:12px; font-weight:900; padding:6px 14px; border-radius:6px; cursor:pointer;">
+          🚀 提交看守
+        </button>
+      </div>
+      <div v-if="submitError" class="submit-error-msg" style="color:#ef4444; font-size:11px; margin-top:4px;">{{ submitError }}</div>
     </div>
 
     <!-- 看守信息控制栏 -->
@@ -251,6 +296,9 @@ const globalBossId = ref<string>('hai'); // 默认寒霜冰龙
 const soundEnabled = ref<boolean>(false);
 const nowMs = ref<number>(Date.now());
 const toastMsg = ref<string>('');
+const newChannelNum = ref<number | null>(null);
+const customMinutes = ref<number | null>(null);
+const submitError = ref<string>('');
 
 // 底部 AI 监测面板折叠
 const showMonitorPanel = ref<boolean>(false);
@@ -384,17 +432,38 @@ function saveLocalChannels() {
   } catch (e) {}
 }
 
-function loadLocalChannels() {
-  try {
-    const data = localStorage.getItem(`maple_single_channels_${activeServer.value}`);
-    if (data) {
-      teamChannels.value = JSON.parse(data);
-    } else {
-      teamChannels.value = [];
-    }
-  } catch (e) {
-    teamChannels.value = [];
+function submitNewChannel() {
+  submitError.value = '';
+  if (!newChannelNum.value || newChannelNum.value <= 0) {
+    submitError.value = '请输入有效的频道号（如 105）';
+    return;
   }
+
+  const ch = newChannelNum.value;
+  const mins = customMinutes.value && customMinutes.value > 0 ? customMinutes.value : currentBossMinutes.value;
+
+  let item = teamChannels.value.find(
+    (i) => i.channelNum === ch && i.bossId === globalBossId.value
+  );
+
+  if (!item) {
+    item = {
+      id: 'ch_' + ch + '_' + globalBossId.value,
+      channelNum: ch,
+      bossId: globalBossId.value,
+      bossName: currentBossName.value,
+      targetEndTime: 0,
+      totalSec: mins * 60,
+      remainingSec: 0,
+      started: false,
+    };
+    teamChannels.value.push(item);
+  }
+
+  triggerTimerWithMinutes(item, mins);
+  triggerToast(`⚡ 手动提交 CH ${ch} 【${currentBossName.value}】开启 ${mins} 分钟倒计时`);
+  newChannelNum.value = null;
+  customMinutes.value = null;
 }
 
 // 矩阵按钮点击一键开启/重置倒计时 (击杀确认 1 秒)

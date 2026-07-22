@@ -719,3 +719,59 @@ html, body {
   from { box-shadow: 0 0 4px rgba(239, 68, 68, 0.6); }
   to { box-shadow: 0 0 14px rgba(239, 68, 68, 1); }
 }
+
+/* 🎥 强对比度防遮挡 AI 监测面板专有 CSS */
+.screen-monitor-panel {
+  margin-top: 24px;
+  background: #0f172a !important; /* 纯深色底牌，完全隔绝背景文字遮挡 */
+  border: 2px solid #3b82f6 !important;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+  color: #ffffff !important;
+  position: relative;
+  z-index: 10;
+}
+
+.panel-header-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: #f8fafc !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.panel-toggle-btn {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  color: #60a5fa !important;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.panel-toggle-btn:hover {
+  background: rgba(59, 130, 246, 0.4);
+  color: #ffffff !important;
+}
+
+.monitor-status-text {
+  color: #38bdf8 !important;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 10px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.bounding-box-tag {
+  background: rgba(15, 23, 42, 0.9) !important;
+  color: #f8fafc !important;
+  font-weight: 900 !important;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
