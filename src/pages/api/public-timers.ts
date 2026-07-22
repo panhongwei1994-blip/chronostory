@@ -19,6 +19,51 @@ export interface PublicTimerRecord {
 // 内存兜底存储（当 D1 数据库尚未绑定或本地运行无 DB 绑定时）
 const memoryStore: Map<string, PublicTimerRecord> = new Map();
 
+/**
+ * 全路径穷举获取 Cloudflare KV 实例 (兼容变量名: BOSS_KV, KV, boss_kv, MY_KV)
+ */
+function getCloudflareKV(locals: any, request: any): any {
+  // 1. Astro 官方 locals.runtime.env
+  const rEnv = locals?.runtime?.env;
+  if (rEnv) {
+    const target = rEnv.BOSS_KV || rEnv.KV || rEnv.boss_kv || rEnv.MY_KV;
+    if (target && typeof target.get === 'function') return target;
+  }
+  // 2. locals.env 挂载
+  const lEnv = locals?.env;
+  if (lEnv) {
+    const target = lEnv.BOSS_KV || lEnv.KV || lEnv.boss_kv || lEnv.MY_KV;
+    if (target && typeof target.get === 'function') return target;
+  }
+  // 3. request.env 挂载
+  const reqEnv = (request as any)?.env;
+  if (reqEnv) {
+    const target = reqEnv.BOSS_KV || reqEnv.KV || reqEnv.boss_kv || reqEnv.MY_KV;
+    if (target && typeof target.get === 'function') return target;
+  }
+  // 4. globalThis 全局对象注入
+  const g = globalThis as any;
+  if (g.BOSS_KV && typeof g.BOSS_KV.get === 'function') return g.BOSS_KV;
+  if (g.KV && typeof g.KV.get === 'function') return g.KV;
+  if (g.boss_kv && typeof g.boss_kv.get === 'function') return g.boss_kv;
+
+  return null;
+}
+
+/**
+ * 全路径穷举获取 Cloudflare D1 数据库实例
+ */
+function getCloudflareDB(locals: any, request: any): any {
+  const rEnv = locals?.runtime?.env;
+  if (rEnv?.DB || rEnv?.BOSS_DB) return rEnv.DB || rEnv.BOSS_DB;
+  const lEnv = locals?.env;
+  if (lEnv?.DB || lEnv?.BOSS_DB) return lEnv.DB || lEnv.BOSS_DB;
+  const g = globalThis as any;
+  if (g.DB) return g.DB;
+  if (g.BOSS_DB) return g.BOSS_DB;
+  return null;
+}
+
 export const GET: APIRoute = async ({ request, locals }) => {
   const url = new URL(request.url);
   const server = (url.searchParams.get('server') || 'asia') as ServerRegion;
@@ -31,10 +76,9 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   let records: PublicTimerRecord[] = [];
 
-  // 全面兼容 Cloudflare 后台设置的所有 KV 与 D1 变量名 (KV, BOSS_KV, boss_kv, MY_KV)
-  const env = (locals as any)?.runtime?.env || {};
-  const kv = env.KV || env.BOSS_KV || env.boss_kv || env.MY_KV;
-  const db = env.DB || env.BOSS_DB || env.boss_db;
+  // 全路径精准匹配 Cloudflare 后台设置的 BOSS_KV / KV
+  const kv = getCloudflareKV(locals, request);
+  const db = getCloudflareDB(locals, request);
 
   // 1. 优先尝试从 Cloudflare KV 读取
   if (kv) {
@@ -142,10 +186,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
       updated_at: now,
     };
 
-    // 全面兼容所有 KV 变量名 (KV, BOSS_KV, boss_kv, MY_KV)
-    const env = (locals as any)?.runtime?.env || {};
-    const kv = env.KV || env.BOSS_KV || env.boss_kv || env.MY_KV;
-    const db = env.DB || env.BOSS_DB || env.boss_db;
+    // 全路径精准匹配 BOSS_KV 与 D1 实例
+    const kv = getCloudflareKV(locals, request);
+    const db = getCloudflareDB(locals, request);
 
     // 1. 写入 Cloudflare KV 绑定
     if (kv) {
@@ -228,9 +271,8 @@ export const DELETE: APIRoute = async ({ request, locals }) => {
   const server = url.searchParams.get('server') as ServerRegion;
   const id = url.searchParams.get('id');
 
-  const env = (locals as any)?.runtime?.env || {};
-  const kv = env.KV || env.BOSS_KV || env.boss_kv || env.MY_KV;
-  const db = env.DB || env.BOSS_DB || env.boss_db;
+  const kv = getCloudflareKV(locals, request);
+  const db = getCloudflareDB(locals, request);
 
   if (server && kv) {
     try {
