@@ -7,5 +7,5 @@ export default defineConfig({
   site: "https://ramen.hisora.cc",
   integrations: [vue(), sitemap()],
   adapter: cloudflare(),
-  output: "server",
+  output: "static",
 });

@@ -68,28 +68,34 @@
       <div style="font-size:13px; font-weight:800; color:#60a5fa; margin-bottom:10px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px;">
         <span>⚔️ 频道看守矩阵 (点击一键开启【{{ currentBossName }}】倒计时)</span>
         
-        <!-- 自定义频道范围填空 -->
-        <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.4); padding:3px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.15);">
-          <span style="font-size:11px; color:#cbd5e1; font-weight:700;">频道范围: CH</span>
-          <input
-            type="number"
-            v-model.number="matrixStartCh"
-            style="width:54px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#fff; font-weight:900; text-align:center; border-radius:4px; font-size:11px; padding:2px 4px;"
-            placeholder="100"
-            @change="saveChannelRange"
-          />
-          <span style="color:#94a3b8; font-size:11px; font-weight:700;">至 CH</span>
-          <input
-            type="number"
-            v-model.number="matrixEndCh"
-            style="width:54px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#fff; font-weight:900; text-align:center; border-radius:4px; font-size:11px; padding:2px 4px;"
-            placeholder="130"
-            @change="saveChannelRange"
-          />
+        <!-- 自定义频道范围填空与快捷预设 -->
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+          <div style="display:flex; gap:4px;">
+            <button @click="applyPresetRange(1, 30)" style="font-size:10px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#e2e8f0; border-radius:4px; padding:2px 6px; cursor:pointer;">1-30</button>
+            <button @click="applyPresetRange(100, 130)" style="font-size:10px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#e2e8f0; border-radius:4px; padding:2px 6px; cursor:pointer;">100-130</button>
+          </div>
+          <div style="display:flex; align-items:center; gap:4px; background:rgba(0,0,0,0.4); padding:3px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.15);">
+            <span style="font-size:11px; color:#cbd5e1; font-weight:700;">CH</span>
+            <input
+              type="number"
+              v-model.number="matrixStartCh"
+              style="width:48px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#fff; font-weight:900; text-align:center; border-radius:4px; font-size:11px; padding:2px 4px;"
+              placeholder="100"
+              @change="saveChannelRange"
+            />
+            <span style="color:#94a3b8; font-size:11px; font-weight:700;">至</span>
+            <input
+              type="number"
+              v-model.number="matrixEndCh"
+              style="width:48px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#fff; font-weight:900; text-align:center; border-radius:4px; font-size:11px; padding:2px 4px;"
+              placeholder="130"
+              @change="saveChannelRange"
+            />
+          </div>
         </div>
       </div>
 
-      <!-- 动态自适应网格矩阵 -->
+      <!-- 动态自适应网格矩阵 (支持左键一键报时，右键长按清空) -->
       <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap:6px;">
         <button
           v-for="ch in matrixChannelList"
@@ -97,6 +103,8 @@
           class="ch-matrix-item-btn"
           :class="getChMatrixClass(ch)"
           @click="quickSelectCh(ch)"
+          @contextmenu.prevent="cancelChMatrix(ch)"
+          :title="`左键一键开启/重置倒计时，右键清空CH ${ch}`"
         >
           <span style="font-size:11px; font-weight:900;">CH {{ ch }}</span>
           <span v-if="getChMatrixTimeText(ch)" style="font-size:9px; opacity:0.9; margin-top:2px;">{{ getChMatrixTimeText(ch) }}</span>
@@ -250,6 +258,21 @@ const showMonitorPanel = ref<boolean>(false);
 // 频道范围 (例如 100 至 130)
 const matrixStartCh = ref<number>(100);
 const matrixEndCh = ref<number>(130);
+
+function applyPresetRange(start: number, end: number) {
+  matrixStartCh.value = start;
+  matrixEndCh.value = end;
+  saveChannelRange();
+  triggerToast(`快捷设置频道范围: CH ${start} ~ ${end}`);
+}
+
+function cancelChMatrix(chNum: number) {
+  teamChannels.value = teamChannels.value.filter(
+    (i) => !(i.channelNum === chNum && i.bossId === globalBossId.value)
+  );
+  saveLocalChannels();
+  triggerToast(`🗑️ 已清空 CH ${chNum} 倒计时`);
+}
 
 const teamChannels = ref<TeamChannelItem[]>([]);
 
