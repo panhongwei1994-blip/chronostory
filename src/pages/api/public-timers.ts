@@ -26,7 +26,7 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   const now = Date.now();
   const serverInfo = getServerTimeInfo(server, now);
-  // 保留过去 18 小时内的所有最新看守记录，防止跨美服/亚服时区计算遗漏
+  // 保留过去 18 小时内的所有最新看守记录
   const cutoffMs = now - 18 * 3600 * 1000;
 
   let records: PublicTimerRecord[] = [];
@@ -58,8 +58,22 @@ export const GET: APIRoute = async ({ request, locals }) => {
     } catch (e) {}
   }
 
-  // 3. 内存兜底模式
-  if (records.length === 0 && !kv && !db) {
+  // 3. 尝试从 Cloudflare Global Edge Cache 全球边缘缓存读取 (零配置全球跨节点共享)
+  if (records.length === 0) {
+    try {
+      const cacheKey = new Request(`https://cache.maple-timer.internal/records_${server}_${room}`);
+      const cachedRes = await caches.default.match(cacheKey);
+      if (cachedRes) {
+        const list: PublicTimerRecord[] = await cachedRes.json();
+        if (Array.isArray(list)) {
+          records = list.filter((r) => r.updated_at >= cutoffMs);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 4. 内存兜底模式
+  if (records.length === 0) {
     records = Array.from(memoryStore.values()).filter(
       (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= cutoffMs
     );
@@ -173,6 +187,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
 
     memoryStore.set(id, record);
+
+    // 3. 写入 Cloudflare Global Edge Cache (零配置全球跨节点数据共享)
+    try {
+      const cacheKey = new Request(`https://cache.maple-timer.internal/records_${server}_${cleanRoom}`);
+      const listToCache = Array.from(memoryStore.values()).filter(
+        (r) => (r.room || 'default') === cleanRoom && r.server === server
+      );
+      const cacheRes = new Response(JSON.stringify(listToCache), {
+        headers: { 'Cache-Control': 'public, max-age=86400', 'Content-Type': 'application/json' },
+      });
+      await caches.default.put(cacheKey, cacheRes);
+    } catch (e) {}
 
     return new Response(
       JSON.stringify({
