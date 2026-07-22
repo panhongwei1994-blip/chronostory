@@ -93,9 +93,11 @@
           class="ch-matrix-item-btn"
           :class="getChMatrixClass(ch)"
           @click="quickSelectCh(ch)"
-          @dblclick="cancelChMatrix(ch)"
+          @touchstart="onTouchStart(ch)"
+          @touchend="onTouchEnd"
+          @touchmove="onTouchEnd"
           @contextmenu.prevent="cancelChMatrix(ch)"
-          :title="`点击开启/重置，手机端双击或电脑端右键直接删除CH ${ch}频道`"
+          :title="`点击开启/重置倒计时，电脑右键或手机长按删除CH ${ch}频道`"
         >
           <span style="font-size:11px; font-weight:900;">CH {{ ch }}</span>
           <span v-if="getChMatrixTimeText(ch)" style="font-size:9px; opacity:0.9; margin-top:2px;">{{ getChMatrixTimeText(ch) }}</span>
@@ -206,7 +208,7 @@
     <div class="screen-monitor-panel">
       <div class="panel-header-toggle" @click="showMonitorPanel = !showMonitorPanel">
         <div class="panel-header-title">
-          <span>🎥 游戏屏幕自动 AI 监测 (血条消失自动开启倒计时)</span>
+          <span>🎥 游戏屏幕 AI 自动监测 (血条检测 / 📸 自动识别换线面板频道)</span>
           <span v-if="isScanning" class="scan-live-badge">● 正在 AI 监控中</span>
         </div>
         <button class="panel-toggle-btn">
@@ -215,7 +217,7 @@
       </div>
 
       <div v-show="showMonitorPanel" class="panel-content-body">
-        <div class="monitor-controls">
+        <div class="monitor-controls" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
           <button v-if="!isScanning" class="btn-start-monitor" @click="startScreenMonitor">
             🎥 绑定游戏窗口
           </button>
@@ -223,8 +225,12 @@
             ⏹️ 停止 AI 监测
           </button>
 
+          <button v-if="isScanning" class="btn-start-monitor" @click="ocrChannelPanelNow" style="background:linear-gradient(135deg, #059669, #10b981); border-color:#34d399;">
+            📸 自动识别【换线面板所有频道】
+          </button>
+
           <div v-if="isScanning" class="monitor-target-ch">
-            <span>当前监控倒计时绑定频道:</span>
+            <span>血条消失绑定频道:</span>
             <input
               type="number"
               v-model.number="boundChannelNum"
@@ -285,7 +291,24 @@ const matrixEndCh = ref<number>(130);
 
 const teamChannels = ref<TeamChannelItem[]>([]);
 
-// 手机端双击或电脑端右键删除该频道
+// 移动端 0.6 秒长按触发删除频道
+let longTouchTimer: any = null;
+
+function onTouchStart(chNum: number) {
+  if (longTouchTimer) clearTimeout(longTouchTimer);
+  longTouchTimer = setTimeout(() => {
+    cancelChMatrix(chNum);
+  }, 600);
+}
+
+function onTouchEnd() {
+  if (longTouchTimer) {
+    clearTimeout(longTouchTimer);
+    longTouchTimer = null;
+  }
+}
+
+// 电脑端右键或手机端长按删除该频道
 function cancelChMatrix(chNum: number) {
   teamChannels.value = teamChannels.value.filter(
     (i) => !(Number(i.channelNum) === Number(chNum) && String(i.bossId) === String(globalBossId.value))
@@ -652,7 +675,70 @@ function captureAndAnalyzeFrame() {
 function onHpBarDisappeared() {
   const ch = boundChannelNum.value || 100;
   quickSelectCh(ch);
-  triggerToast(`🎯 AI 检测到 Boss 顶端血条消失！已自动为您启动 CH ${ch} 倒计时！`);
+}
+
+// 📸 自动识别游戏内 CHANGE CHANNEL 弹窗里的所有频道
+async function ocrChannelPanelNow() {
+  if (!videoRef.value || !canvasRef.value) return;
+
+  monitorStatus.value = '📸 正在扫描游戏画面中的 CHANGE CHANNEL 换线面板...';
+
+  const video = videoRef.value;
+  const canvas = canvasRef.value;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 720;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  try {
+    // @ts-ignore
+    if (typeof window.Tesseract !== 'undefined') {
+      // @ts-ignore
+      const worker = await window.Tesseract.createWorker('eng');
+      const ret = await worker.recognize(canvas);
+      await worker.terminate();
+
+      const text = ret.data.text || '';
+      monitorStatus.value = `解析画面文字中...`;
+
+      // 解析画面上的 CH 1391, CH1398, CH 1405 等频道
+      const regex = /(?:CH|CH\.|CH_|\b)(\d{3,4})\b/gi;
+      const matches = [...text.matchAll(regex)];
+      const extracted: number[] = [];
+
+      matches.forEach((m) => {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > 0 && num < 9999 && !extracted.includes(num)) {
+          extracted.push(num);
+        }
+      });
+
+      if (extracted.length > 0) {
+        extracted.sort((a, b) => a - b);
+        const minCh = extracted[0];
+        const maxCh = extracted[extracted.length - 1];
+
+        // 自动将频道范围设置为扫描到的区间
+        matrixStartCh.value = minCh;
+        matrixEndCh.value = maxCh;
+        saveChannelRange();
+
+        // 自动解封抹去的频道
+        hiddenChannels.value = hiddenChannels.value.filter((c) => !extracted.includes(c));
+        saveHiddenChannels();
+
+        monitorStatus.value = `🎉 成功从游戏换线面板提取出 ${extracted.length} 个频道 (CH ${minCh} ~ CH ${maxCh})，已全自动更新填入看守矩阵！`;
+      } else {
+        monitorStatus.value = '⚠️ 未能在当前画面中检测到 CH 频道，请确保游戏内已打开 CHANGE CHANNEL 窗口。';
+      }
+    } else {
+      monitorStatus.value = '⚠️ Tesseract OCR 识别组件未就绪';
+    }
+  } catch (e) {
+    monitorStatus.value = '⚠️ 换线面板识别异常，请重试';
+  }
 }
 
 let timerInterval: any = null;
