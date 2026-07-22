@@ -83,6 +83,14 @@
             @change="saveChannelRange"
           />
         </div>
+
+        <button
+          v-if="hiddenChannels.length > 0"
+          style="font-size:10px; background:rgba(239,68,68,0.3); color:#fca5a5; border:1px solid rgba(239,68,68,0.5); border-radius:4px; padding:2px 8px; cursor:pointer; font-weight:700;"
+          @click="resetHiddenChannels"
+        >
+          🔄 恢复已删 {{ hiddenChannels.length }} 频道
+        </button>
       </div>
 
       <!-- 动态自适应网格矩阵 (左键一键报时，右键一键删除频道) -->
@@ -214,16 +222,16 @@
       </div>
 
       <div class="panel-content-body">
-        <div class="monitor-controls" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px;">
-          <button v-if="!isScanning" class="btn-start-monitor highlight-bind-btn" @click="startScreenMonitor">
-            🎥 点击绑定枫之谷游戏窗口
+        <div class="monitor-controls" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px;">
+          <button v-if="!isScanning" class="highlight-bind-btn" @click="startScreenMonitor">
+            🎥 绑定游戏窗口
           </button>
           <button v-else class="btn-stop-monitor" @click="stopScreenMonitor">
-            ⏹️ 停止 AI 画面监测
+            ⏹️ 停止监测
           </button>
 
-          <button v-if="isScanning" class="btn-start-monitor highlight-ocr-btn" @click="ocrChannelPanelNow">
-            📸 对比【换线面板】自动删除不存在频道
+          <button v-if="isScanning" class="highlight-ocr-btn" @click="ocrChannelPanelNow">
+            📸 识别并删除无效频道
           </button>
 
           <div v-if="isScanning" class="monitor-target-ch">
@@ -301,6 +309,33 @@ let scanTimer: any = null;
 
 const teamChannels = ref<TeamChannelItem[]>([]);
 
+// 已删除抹去的频道黑名单
+const hiddenChannels = ref<number[]>([]);
+
+function saveHiddenChannels() {
+  try {
+    localStorage.setItem(`maple_hidden_channels_${activeServer.value}`, JSON.stringify(hiddenChannels.value));
+  } catch (e) {}
+}
+
+function loadHiddenChannels() {
+  try {
+    const raw = localStorage.getItem(`maple_hidden_channels_${activeServer.value}`);
+    if (raw) {
+      hiddenChannels.value = JSON.parse(raw);
+    } else {
+      hiddenChannels.value = [];
+    }
+  } catch (e) {
+    hiddenChannels.value = [];
+  }
+}
+
+function resetHiddenChannels() {
+  hiddenChannels.value = [];
+  saveHiddenChannels();
+}
+
 // 移动端 0.6 秒长按触发删除频道
 let longTouchTimer: any = null;
 
@@ -323,7 +358,13 @@ function cancelChMatrix(chNum: number) {
   teamChannels.value = teamChannels.value.filter(
     (i) => !(Number(i.channelNum) === Number(chNum) && String(i.bossId) === String(globalBossId.value))
   );
+  // 加入隐藏黑名单，频道从矩阵中彻底消失
+  if (!hiddenChannels.value.includes(chNum)) {
+    hiddenChannels.value.push(chNum);
+    saveHiddenChannels();
+  }
   saveLocalChannels();
+  triggerToast(`CH ${chNum} 已删除`);
 }
 
 const currentBossName = computed(() => {
@@ -353,10 +394,12 @@ const activeCountingChannels = computed(() => {
 const matrixChannelList = computed(() => {
   const start = Math.max(1, matrixStartCh.value || 1);
   let end = Math.max(start, matrixEndCh.value || start);
-  if (end - start > 100) end = start + 100;
+  if (end - start > 400) end = start + 400;
   const list: number[] = [];
   for (let c = start; c <= end; c++) {
-    list.push(c);
+    if (!hiddenChannels.value.includes(c)) {
+      list.push(c);
+    }
   }
   return list;
 });
@@ -700,11 +743,14 @@ function onHpBarDisappeared() {
   quickSelectCh(ch);
 }
 
-// 📸 自动识别游戏内 CHANGE CHANNEL 弹窗里的所有频道与高亮双击选中频道
+// 📸 识别游戏换线面板，对比当前频道范围，自动删除游戏中不存在的频道
 async function ocrChannelPanelNow() {
-  if (!videoRef.value || !canvasRef.value) return;
+  if (!videoRef.value || !canvasRef.value) {
+    monitorStatus.value = '⚠️ 请先绑定游戏窗口';
+    return;
+  }
 
-  monitorStatus.value = '📸 正在扫描游戏画面中的换线面板与高亮切线频道...';
+  monitorStatus.value = '📸 正在识别游戏换线面板中的频道...';
 
   const video = videoRef.value;
   const canvas = canvasRef.value;
@@ -717,54 +763,52 @@ async function ocrChannelPanelNow() {
 
   try {
     // @ts-ignore
-    if (typeof window.Tesseract !== 'undefined') {
-      // @ts-ignore
-      const worker = await window.Tesseract.createWorker('eng');
-      const ret = await worker.recognize(canvas);
-      await worker.terminate();
-
-      const text = ret.data.text || '';
-
-      // 解析画面上的 CH 1391, CH1398, CH 1405 等频道
-      const regex = /(?:CH|CH\.|CH_|\b)(\d{3,4})\b/gi;
-      const matches = [...text.matchAll(regex)];
-      const extracted: number[] = [];
-
-      matches.forEach((m) => {
-        const num = parseInt(m[1], 10);
-        if (!isNaN(num) && num > 0 && num < 9999 && !extracted.includes(num)) {
-          extracted.push(num);
-        }
-      });
-
-      if (extracted.length > 0) {
-        extracted.sort((a, b) => a - b);
-        const minCh = extracted[0];
-        const maxCh = extracted[extracted.length - 1];
-
-        // 自动录入频道数量
-        matrixStartCh.value = minCh;
-        matrixEndCh.value = maxCh;
-        saveChannelRange();
-
-        // 自动解封
-        hiddenChannels.value = hiddenChannels.value.filter((c) => !extracted.includes(c));
-        saveHiddenChannels();
-
-        // 锁定为看守线
-        if (extracted[0]) {
-          boundChannelNum.value = extracted[0];
-        }
-
-        monitorStatus.value = `🎉 自动从游戏换线面板录入 ${extracted.length} 个频道 (CH ${minCh} ~ CH ${maxCh})！自动锁定您切到的频道看守！`;
-      } else {
-        monitorStatus.value = '⚠️ 未能在当前画面中检测到 CH 频道，请在游戏内打开 CHANGE CHANNEL 窗口。';
-      }
-    } else {
-      monitorStatus.value = '⚠️ Tesseract OCR 识别组件未就绪';
+    const TesseractLib = window.Tesseract;
+    if (!TesseractLib) {
+      monitorStatus.value = '⚠️ Tesseract OCR 引擎未加载，请刷新页面重试';
+      return;
     }
-  } catch (e) {
-    monitorStatus.value = '⚠️ 换线面板识别异常，请重试';
+
+    const worker = await TesseractLib.createWorker('eng');
+    const ret = await worker.recognize(canvas);
+    await worker.terminate();
+
+    const text = ret.data.text || '';
+    monitorStatus.value = `OCR 原始识别结果: ${text.substring(0, 200)}...`;
+
+    // 提取画面上的频道号 (CH.1391, CH1398, CH 1405 等多种格式)
+    const regex = /CH[\s._]*(\d{3,4})/gi;
+    const matches = [...text.matchAll(regex)];
+    const gameChannels = new Set<number>();
+
+    matches.forEach((m) => {
+      const num = parseInt(m[1], 10);
+      if (!isNaN(num) && num > 0 && num < 99999) {
+        gameChannels.add(num);
+      }
+    });
+
+    if (gameChannels.size > 0) {
+      // 不改变用户输入的频道范围！只在范围内删除游戏中不存在的频道
+      const start = Math.max(1, matrixStartCh.value || 1);
+      const end = Math.max(start, matrixEndCh.value || start);
+
+      let removedCount = 0;
+      for (let c = start; c <= end; c++) {
+        if (!gameChannels.has(c) && !hiddenChannels.value.includes(c)) {
+          hiddenChannels.value.push(c);
+          removedCount++;
+        }
+      }
+      saveHiddenChannels();
+
+      const kept = gameChannels.size;
+      monitorStatus.value = `🎉 识别到 ${kept} 个真实频道，已自动删除 ${removedCount} 个不存在的频道！频道范围保持不变 (${start}~${end})`;
+    } else {
+      monitorStatus.value = `⚠️ 未检测到频道号。OCR 原文: "${text.substring(0, 150)}"。请确保游戏内已打开 CHANGE CHANNEL 窗口且画面清晰。`;
+    }
+  } catch (e: any) {
+    monitorStatus.value = `⚠️ 识别异常: ${e?.message || '未知错误'}，请确保画面清晰后重试`;
   }
 }
 
@@ -773,6 +817,7 @@ let timerInterval: any = null;
 onMounted(() => {
   loadChannelRange();
   loadLocalChannels();
+  loadHiddenChannels();
 
   timerInterval = setInterval(() => {
     const current = Date.now();
