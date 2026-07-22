@@ -93,8 +93,9 @@
           class="ch-matrix-item-btn"
           :class="getChMatrixClass(ch)"
           @click="quickSelectCh(ch)"
+          @dblclick="cancelChMatrix(ch)"
           @contextmenu.prevent="cancelChMatrix(ch)"
-          :title="`左键一键开启/重置倒计时，右键删除CH ${ch}频道记录`"
+          :title="`点击开启/重置，手机端双击或电脑端右键直接删除CH ${ch}频道`"
         >
           <span style="font-size:11px; font-weight:900;">CH {{ ch }}</span>
           <span v-if="getChMatrixTimeText(ch)" style="font-size:9px; opacity:0.9; margin-top:2px;">{{ getChMatrixTimeText(ch) }}</span>
@@ -273,42 +274,23 @@ const activeServer = ref<ServerRegion>('asia');
 const globalBossId = ref<string>('hai'); // 默认寒霜冰龙
 const soundEnabled = ref<boolean>(false);
 const nowMs = ref<number>(Date.now());
-const toastMsg = ref<string>('');
 const newChannelNum = ref<number | null>(null);
 const customMinutes = ref<number | null>(null);
 const submitError = ref<string>('');
-
-// 底部 AI 监测面板折叠
 const showMonitorPanel = ref<boolean>(false);
 
 // 频道范围 (例如 100 至 130)
 const matrixStartCh = ref<number>(100);
 const matrixEndCh = ref<number>(130);
 
-function cancelChMatrix(chNum: number) {
-  teamChannels.value = teamChannels.value.filter(
-    (i) => !(i.channelNum === chNum && i.bossId === globalBossId.value)
-  );
-  saveLocalChannels();
-  triggerToast(`🗑️ 已删除 CH ${chNum} 频道记录`);
-}
-
 const teamChannels = ref<TeamChannelItem[]>([]);
 
-// 画面捕获
-const videoRef = ref<HTMLVideoElement | null>(null);
-const canvasRef = ref<HTMLCanvasElement | null>(null);
-const isScanning = ref<boolean>(false);
-const monitorStatus = ref<string>('');
-const boundChannelNum = ref<number | null>(100);
-const isHpBarPresent = ref<boolean>(false);
-
-let wasHpBarPresent = false;
-let hpBarDisappearCount = 0;
-let mediaStream: MediaStream | null = null;
-let scanTimer: any = null;
-function triggerToast(msg: string) {
-  // 无弹窗模式：极速无干预操作
+// 手机端双击或电脑端右键删除该频道
+function cancelChMatrix(chNum: number) {
+  teamChannels.value = teamChannels.value.filter(
+    (i) => !(Number(i.channelNum) === Number(chNum) && String(i.bossId) === String(globalBossId.value))
+  );
+  saveLocalChannels();
 }
 
 const currentBossName = computed(() => {

@@ -687,6 +687,8 @@ html, body {
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .ch-matrix-item-btn:hover {
