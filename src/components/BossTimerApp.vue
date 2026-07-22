@@ -677,11 +677,11 @@ function onHpBarDisappeared() {
   quickSelectCh(ch);
 }
 
-// 📸 自动识别游戏内 CHANGE CHANNEL 弹窗里的所有频道
+// 📸 自动识别游戏内 CHANGE CHANNEL 弹窗里的所有频道与高亮双击选中频道
 async function ocrChannelPanelNow() {
   if (!videoRef.value || !canvasRef.value) return;
 
-  monitorStatus.value = '📸 正在扫描游戏画面中的 CHANGE CHANNEL 换线面板...';
+  monitorStatus.value = '📸 正在扫描游戏画面中的换线面板与高亮切线频道...';
 
   const video = videoRef.value;
   const canvas = canvasRef.value;
@@ -701,7 +701,6 @@ async function ocrChannelPanelNow() {
       await worker.terminate();
 
       const text = ret.data.text || '';
-      monitorStatus.value = `解析画面文字中...`;
 
       // 解析画面上的 CH 1391, CH1398, CH 1405 等频道
       const regex = /(?:CH|CH\.|CH_|\b)(\d{3,4})\b/gi;
@@ -720,18 +719,23 @@ async function ocrChannelPanelNow() {
         const minCh = extracted[0];
         const maxCh = extracted[extracted.length - 1];
 
-        // 自动将频道范围设置为扫描到的区间
+        // 自动录入频道数量
         matrixStartCh.value = minCh;
         matrixEndCh.value = maxCh;
         saveChannelRange();
 
-        // 自动解封抹去的频道
+        // 自动解封
         hiddenChannels.value = hiddenChannels.value.filter((c) => !extracted.includes(c));
         saveHiddenChannels();
 
-        monitorStatus.value = `🎉 成功从游戏换线面板提取出 ${extracted.length} 个频道 (CH ${minCh} ~ CH ${maxCh})，已全自动更新填入看守矩阵！`;
+        // 锁定为看守线
+        if (extracted[0]) {
+          boundChannelNum.value = extracted[0];
+        }
+
+        monitorStatus.value = `🎉 自动从游戏换线面板录入 ${extracted.length} 个频道 (CH ${minCh} ~ CH ${maxCh})！自动锁定您切到的频道看守！`;
       } else {
-        monitorStatus.value = '⚠️ 未能在当前画面中检测到 CH 频道，请确保游戏内已打开 CHANGE CHANNEL 窗口。';
+        monitorStatus.value = '⚠️ 未能在当前画面中检测到 CH 频道，请在游戏内打开 CHANGE CHANNEL 窗口。';
       }
     } else {
       monitorStatus.value = '⚠️ Tesseract OCR 识别组件未就绪';
