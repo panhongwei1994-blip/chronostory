@@ -981,38 +981,42 @@ async function fetchCloudRecords() {
 }
 
 function syncCloudToLocal() {
-  // 同步云端所有 Boss 的最新记录
+  // 战队模式下：强制以云端最新公布的频道与击杀倒计时为准对齐
   cloudRecords.value.forEach((record) => {
     const numMatch = record.channel.replace(/\D/g, '');
     if (!numMatch) return;
     const chNum = parseInt(numMatch, 10);
 
-    // 必须严格匹配频道号 + BossID，防止跨 Boss 数据污染！
-    let existing = teamChannels.value.find((i) => i.channelNum === chNum && i.bossId === record.boss_id);
+    let existing = teamChannels.value.find(
+      (i) => i.channelNum === chNum && i.bossId === record.boss_id
+    );
+
+    const remainingSec = Math.max(0, Math.floor((record.respawn_at - Date.now()) / 1000));
 
     if (existing) {
-      if (record.respawn_at > existing.targetEndTime) {
+      // 只要云端的击杀结束时间更新，或者倒计时时间差超过 2 秒，直接强制对齐云端
+      if (Math.abs(existing.targetEndTime - record.respawn_at) > 2000) {
         existing.targetEndTime = record.respawn_at;
         existing.bossId = record.boss_id;
         existing.bossName = record.boss_name;
-        existing.remainingSec = Math.max(0, Math.floor((record.respawn_at - Date.now()) / 1000));
+        existing.totalSec = (record.respawn_minutes || 10) * 60;
+        existing.remainingSec = remainingSec;
         existing.started = true;
+        existing.cooldown = false;
       }
     } else {
-      // 若本地不存在该 Boss 的频道记录，自动在本地拉取创建
-      const remaining = Math.max(0, Math.floor((record.respawn_at - Date.now()) / 1000));
-      if (remaining > 0) {
-        teamChannels.value.push({
-          id: `cloud_${record.server}_CH${chNum}_${record.boss_id}`,
-          channelNum: chNum,
-          bossId: record.boss_id,
-          bossName: record.boss_name,
-          targetEndTime: record.respawn_at,
-          totalSec: (record.respawn_minutes || 10) * 60,
-          remainingSec: remaining,
-          started: true,
-        });
-      }
+      // 若本地还没有队友报时的这个频道，自动加入全队共享看板
+      teamChannels.value.push({
+        id: `cloud_${record.server}_CH${chNum}_${record.boss_id}`,
+        channelNum: chNum,
+        bossId: record.boss_id,
+        bossName: record.boss_name,
+        targetEndTime: record.respawn_at,
+        totalSec: (record.respawn_minutes || 10) * 60,
+        remainingSec: remainingSec,
+        started: true,
+        cooldown: false,
+      });
     }
   });
 
@@ -1070,7 +1074,7 @@ onMounted(() => {
 
   pollInterval = setInterval(() => {
     fetchCloudRecords();
-  }, 5000);
+  }, 2000);
 });
 
 onUnmounted(() => {
