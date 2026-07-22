@@ -31,10 +31,12 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   let records: PublicTimerRecord[] = [];
 
-  // 1. 优先尝试从 Cloudflare KV 读取
-  const kv = (locals as any)?.runtime?.env?.KV;
-  const db = (locals as any)?.runtime?.env?.DB;
+  // 全面兼容 Cloudflare 后台设置的所有 KV 与 D1 变量名 (KV, BOSS_KV, boss_kv, MY_KV)
+  const env = (locals as any)?.runtime?.env || {};
+  const kv = env.KV || env.BOSS_KV || env.boss_kv || env.MY_KV;
+  const db = env.DB || env.BOSS_DB || env.boss_db;
 
+  // 1. 优先尝试从 Cloudflare KV 读取
   if (kv) {
     try {
       const raw = await kv.get(`timers_${server}_${room}`);
@@ -58,7 +60,7 @@ export const GET: APIRoute = async ({ request, locals }) => {
     } catch (e) {}
   }
 
-  // 3. 尝试从 Cloudflare Global Edge Cache 全球边缘缓存读取 (零配置全球跨节点共享)
+  // 3. 尝试从 Global Edge Cache 边缘缓存读取
   if (records.length === 0) {
     try {
       const cacheKey = new Request(`https://cache.maple-timer.internal/records_${server}_${room}`);
@@ -140,18 +142,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
       updated_at: now,
     };
 
-    // 1. 写入 Cloudflare KV 绑定
-    const kv = (locals as any)?.runtime?.env?.KV;
-    const db = (locals as any)?.runtime?.env?.DB;
+    // 全面兼容所有 KV 变量名 (KV, BOSS_KV, boss_kv, MY_KV)
+    const env = (locals as any)?.runtime?.env || {};
+    const kv = env.KV || env.BOSS_KV || env.boss_kv || env.MY_KV;
+    const db = env.DB || env.BOSS_DB || env.boss_db;
 
+    // 1. 写入 Cloudflare KV 绑定
     if (kv) {
       try {
         const raw = await kv.get(`timers_${server}_${cleanRoom}`);
         let list: PublicTimerRecord[] = raw ? JSON.parse(raw) : [];
         list = list.filter((r) => r.id !== id);
         list.push(record);
-        // 保存 24 小时过期
-        await kv.put(`timers_${server}_${cleanRoom}`, JSON.stringify(list), { expirationTtl: 86400 });
+        // 保存 7 天长效过期
+        await kv.put(`timers_${server}_${cleanRoom}`, JSON.stringify(list), { expirationTtl: 604800 });
       } catch (e) {}
     }
 
@@ -224,7 +228,15 @@ export const DELETE: APIRoute = async ({ request, locals }) => {
   const server = url.searchParams.get('server') as ServerRegion;
   const id = url.searchParams.get('id');
 
-  const db = (locals as any)?.runtime?.env?.DB;
+  const env = (locals as any)?.runtime?.env || {};
+  const kv = env.KV || env.BOSS_KV || env.boss_kv || env.MY_KV;
+  const db = env.DB || env.BOSS_DB || env.boss_db;
+
+  if (server && kv) {
+    try {
+      await kv.delete(`timers_${server}_default`);
+    } catch (e) {}
+  }
 
   if (id) {
     memoryStore.delete(id);
