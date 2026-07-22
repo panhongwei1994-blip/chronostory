@@ -214,16 +214,16 @@
       </div>
 
       <div class="panel-content-body">
-        <div class="monitor-controls" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-          <button v-if="!isScanning" class="btn-start-monitor" @click="startScreenMonitor">
-            🎥 绑定游戏窗口
+        <div class="monitor-controls" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px;">
+          <button v-if="!isScanning" class="btn-start-monitor highlight-bind-btn" @click="startScreenMonitor">
+            🎥 点击绑定枫之谷游戏窗口
           </button>
           <button v-else class="btn-stop-monitor" @click="stopScreenMonitor">
-            ⏹️ 停止 AI 监测
+            ⏹️ 停止 AI 画面监测
           </button>
 
-          <button v-if="isScanning" class="btn-start-monitor" @click="ocrChannelPanelNow" style="background:linear-gradient(135deg, #059669, #10b981); border-color:#34d399;">
-            📸 自动识别【换线面板所有频道】
+          <button v-if="isScanning" class="btn-start-monitor highlight-ocr-btn" @click="ocrChannelPanelNow">
+            📸 对比【换线面板】自动删除不存在频道
           </button>
 
           <div v-if="isScanning" class="monitor-target-ch">
@@ -285,6 +285,19 @@ const showMonitorPanel = ref<boolean>(false);
 // 频道范围 (例如 100 至 130)
 const matrixStartCh = ref<number>(100);
 const matrixEndCh = ref<number>(130);
+
+// 🎥 AI 画面监控核心状态
+const videoRef = ref<HTMLVideoElement | null>(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const isScanning = ref<boolean>(false);
+const monitorStatus = ref<string>('');
+const boundChannelNum = ref<number | null>(100);
+const isHpBarPresent = ref<boolean>(false);
+
+let wasHpBarPresent = false;
+let hpBarDisappearCount = 0;
+let mediaStream: MediaStream | null = null;
+let scanTimer: any = null;
 
 const teamChannels = ref<TeamChannelItem[]>([]);
 
@@ -570,19 +583,19 @@ function playAlertSound() {
 
 // 🎥 游戏屏幕 AI 监测
 function startScreenMonitor() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    monitorStatus.value = '⚠️ 您的浏览器暂不支持屏幕捕获（请使用电脑版 Chrome / Edge / Brave 浏览器，并在 HTTPS 加密网站下使用此功能）';
+  if (!navigator || !navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+    const msg = '⚠️ 当前浏览器或协议不支持窗口截图（需要使用 Chrome / Edge 电脑版浏览器，并使用 HTTPS 安全域名访问）';
+    monitorStatus.value = msg;
+    alert(msg);
     return;
   }
 
-  monitorStatus.value = '正在请求屏幕共享权限，请在弹出的对话框中选择枫之谷游戏窗口...';
+  monitorStatus.value = '⏳ 正在拉起浏览器权限... 请在屏幕顶部弹出的窗口中选择【枫之谷游戏窗口】！';
 
+  // 使用最标准、无障碍兼容的 { video: true }
   navigator.mediaDevices.getDisplayMedia({
-    video: {
-      // @ts-ignore
-      displaySurface: 'window',
-    },
-    audio: false,
+    video: true,
+    audio: false
   }).then(async (stream) => {
     mediaStream = stream;
     await nextTick();
@@ -601,12 +614,14 @@ function startScreenMonitor() {
     scanTimer = setInterval(() => {
       captureAndAnalyzeFrame();
     }, 1200);
-  }).catch((err) => {
+  }).catch((err: any) => {
     isScanning.value = false;
-    if (err.name === 'NotAllowedError') {
-      monitorStatus.value = '⚠️ 您取消了屏幕授权。请重新点击【🎥 绑定游戏窗口】并在浏览器顶部弹窗中点击【允许】。';
+    if (err && err.name === 'NotAllowedError') {
+      monitorStatus.value = '⚠️ 您取消了窗口选择。请再次点击按钮，并在浏览器上方弹窗里点击【共享/允许】。';
     } else {
-      monitorStatus.value = `⚠️ 绑定失败: ${err.message || '请确保使用 Chrome/Edge 电脑版浏览器并在 HTTPS 下访问'}`;
+      const errMsg = `⚠️ 窗口绑定失败: ${err?.message || '请确保使用 Chrome/Edge 电脑版浏览器并在 HTTPS 下访问'}`;
+      monitorStatus.value = errMsg;
+      alert(errMsg);
     }
   });
 }
