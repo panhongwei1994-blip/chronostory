@@ -18,7 +18,6 @@ export interface PublicTimerRecord {
 
 // 内存兜底存储（当 D1 数据库尚未绑定或本地运行无 DB 绑定时）
 const memoryStore: Map<string, PublicTimerRecord> = new Map();
-let isCleared = false;
 
 export const GET: APIRoute = async ({ request, locals }) => {
   const url = new URL(request.url);
