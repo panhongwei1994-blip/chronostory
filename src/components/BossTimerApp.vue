@@ -11,23 +11,43 @@
       <h1 class="header-title">MAPLESTORY BOSS 刷新倒计时看守看板</h1>
     </header>
 
-    <!-- 服务器与 01:00 重置 -->
-    <div class="server-bar">
-      <div class="server-selector">
-        <button
-          class="server-btn"
-          :class="{ active: activeServer === 'asia' }"
-          @click="selectServer('asia')"
-        >
-          🌏 亚服
-        </button>
-        <button
-          class="server-btn"
-          :class="{ active: activeServer === 'na' }"
-          @click="selectServer('na')"
-        >
-          🗽 美服
-        </button>
+    <!-- 服务器、模式选择与 01:00 重置 -->
+    <div class="server-bar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div class="server-selector">
+          <button
+            class="server-btn"
+            :class="{ active: activeServer === 'asia' }"
+            @click="selectServer('asia')"
+          >
+            🌏 亚服
+          </button>
+          <button
+            class="server-btn"
+            :class="{ active: activeServer === 'na' }"
+            @click="selectServer('na')"
+          >
+            🗽 美服
+          </button>
+        </div>
+
+        <!-- 模式切换：战队协同 vs 个人单刷 -->
+        <div class="mode-selector" style="display:flex; gap:3px; background:#e2e8f0; padding:3px; border-radius:8px;">
+          <button
+            class="server-btn"
+            :class="{ active: isTeamMode }"
+            @click="toggleMode(true)"
+          >
+            🤝 战队协同
+          </button>
+          <button
+            class="server-btn"
+            :class="{ active: !isTeamMode }"
+            @click="toggleMode(false)"
+          >
+            👤 个人单刷
+          </button>
+        </div>
       </div>
 
       <div class="reset-timer-info">
@@ -301,6 +321,7 @@ export interface PublicTimerRecord {
 
 // 状态
 const activeServer = ref<ServerRegion>('asia');
+const isTeamMode = ref<boolean>(true); // 🤝 战队协同 (true) vs 👤 个人单刷 (false)
 const globalBossId = ref<string>('hai'); // 默认寒霜冰龙
 const soundEnabled = ref<boolean>(false); // 默认不发出声音提示
 const nowMs = ref<number>(Date.now());
@@ -308,6 +329,28 @@ const toastMsg = ref<string>('');
 const newChannelNum = ref<number | null>(null);
 const customMinutes = ref<number | null>(null);
 const submitError = ref<string>('');
+
+function toggleMode(mode: boolean) {
+  isTeamMode.value = mode;
+  try {
+    localStorage.setItem('maple_is_team_mode', JSON.stringify(mode));
+  } catch (e) {}
+  if (mode) {
+    fetchCloudRecords();
+    triggerToast('🤝 已切换为【战队协同模式】(实时同步全队报时)');
+  } else {
+    triggerToast('👤 已切换为【个人单刷模式】(本地独立看守，不触发云端同步)');
+  }
+}
+
+function loadModePreference() {
+  try {
+    const raw = localStorage.getItem('maple_is_team_mode');
+    if (raw !== null) {
+      isTeamMode.value = JSON.parse(raw);
+    }
+  } catch (e) {}
+}
 
 // 底部画面 AI 监测面板折叠隐藏控制 (默认隐藏)
 const showMonitorPanel = ref<boolean>(false);
@@ -872,13 +915,16 @@ function triggerTimerWithMinutes(item: TeamChannelItem, minutes: number) {
   const itemBossId = item.bossId || globalBossId.value;
   const itemBossName = item.bossName || currentBossName.value;
 
-  // 先变灰色 cooldown 2 秒
+  // 先变灰色 cooldown 1 秒 (原为2秒，现缩短为1秒极速确认)
   item.cooldown = true;
   item.started = false;
   item.remainingSec = 0;
   saveLocalChannels();
 
-  broadcastToCloud(item.channelNum, itemBossId, itemBossName, minutes);
+  // 战队模式下才广播给云端
+  if (isTeamMode.value) {
+    broadcastToCloud(item.channelNum, itemBossId, itemBossName, minutes);
+  }
 
   setTimeout(() => {
     const sec = minutes * 60;
@@ -890,7 +936,7 @@ function triggerTimerWithMinutes(item: TeamChannelItem, minutes: number) {
     item.remainingSec = sec;
     item.started = true;
     saveLocalChannels();
-  }, 2000);
+  }, 1000);
 }
 
 function selectServer(server: ServerRegion) {
@@ -923,9 +969,9 @@ function loadLocalChannels() {
 }
 
 async function fetchCloudRecords() {
+  if (!isTeamMode.value) return; // 个人模式下不同步云端公共数据
   try {
-    const roomParam = encodeURIComponent((roomCode.value || 'default').trim());
-    const res = await fetch(`/api/public-timers?server=${activeServer.value}&room=${roomParam}`);
+    const res = await fetch(`/api/public-timers?server=${activeServer.value}`);
     const json = await res.json();
     if (json.success && Array.isArray(json.records)) {
       cloudRecords.value = json.records;
@@ -979,14 +1025,13 @@ async function broadcastToCloud(
   bossName: string,
   respawnMinutes: number
 ) {
-  if (!channelNum || channelNum <= 0) return;
+  if (!isTeamMode.value || !channelNum || channelNum <= 0) return;
   try {
     await fetch('/api/public-timers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         server: activeServer.value,
-        room: roomCode.value || 'default',
         channel: `CH ${channelNum}`,
         boss_id: bossId,
         boss_name: bossName,
@@ -1003,6 +1048,7 @@ let timerInterval: any = null;
 let pollInterval: any = null;
 
 onMounted(() => {
+  loadModePreference();
   loadChannelRange();
   loadLocalChannels();
   fetchCloudRecords();
