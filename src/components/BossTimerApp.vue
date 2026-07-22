@@ -397,6 +397,31 @@ function saveLocalChannels() {
   } catch (e) {}
 }
 
+function loadLocalChannels() {
+  try {
+    const data = localStorage.getItem(`maple_single_channels_${activeServer.value}`);
+    if (data) {
+      const list: TeamChannelItem[] = JSON.parse(data);
+      const now = Date.now();
+      teamChannels.value = list.map((item) => {
+        if (item.targetEndTime > 0) {
+          const left = Math.max(0, Math.floor((item.targetEndTime - now) / 1000));
+          return {
+            ...item,
+            remainingSec: left,
+            started: left > 0 ? true : item.started,
+          };
+        }
+        return item;
+      });
+    } else {
+      teamChannels.value = [];
+    }
+  } catch (e) {
+    teamChannels.value = [];
+  }
+}
+
 function submitNewChannel() {
   submitError.value = '';
   if (!newChannelNum.value || newChannelNum.value <= 0) {
