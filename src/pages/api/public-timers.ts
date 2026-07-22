@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getPreviousResetTimestamp, getServerTimeInfo, type ServerRegion } from '../../utils/timezone';
+import { getServerTimeInfo, type ServerRegion } from '../../utils/timezone';
 
 export interface PublicTimerRecord {
   id: string;
@@ -64,7 +64,7 @@ export const GET: APIRoute = async ({ request, locals }) => {
   if (records.length === 0) {
     try {
       const cacheKey = new Request(`https://cache.maple-timer.internal/records_${server}_${room}`);
-      const cachedRes = await caches.default.match(cacheKey);
+      const cachedRes = await (caches as any).default.match(cacheKey);
       if (cachedRes) {
         const list: PublicTimerRecord[] = await cachedRes.json();
         if (Array.isArray(list)) {
@@ -201,7 +201,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       const cacheRes = new Response(JSON.stringify(listToCache), {
         headers: { 'Cache-Control': 'public, max-age=86400', 'Content-Type': 'application/json' },
       });
-      await caches.default.put(cacheKey, cacheRes);
+      await (caches as any).default.put(cacheKey, cacheRes);
     } catch (e) {}
 
     return new Response(
