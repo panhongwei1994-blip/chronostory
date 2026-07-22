@@ -1,0 +1,247 @@
+---
+import { getContent, normalizeLocale } from "@/data/site";
+
+const lang = normalizeLocale(Astro.props.lang);
+const content = getContent(lang);
+---
+
+<section class="hero-shell">
+  <div class="hero-grain" aria-hidden="true"></div>
+  <div class="hero-wash" aria-hidden="true"></div>
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">{content.brand}</p>
+      <span class="hero-badge">{content.heroBadge}</span>
+      <h1 class="section-title hero-title">
+        {content.heroTitle}
+      </h1>
+      <p class="section-copy hero-body">
+        {content.heroBody}
+      </p>
+      <div class="hero-cta-row">
+        <a class="pill-button" href="#order-menu">{content.orderNow}</a>
+        <button
+          class="ghost-button install-button"
+          type="button"
+          data-a2hs-trigger
+          data-install-ios-hint={content.installHintIos}
+          data-install-generic-hint={content.installHintGeneric}
+        >
+          {content.addToHomeScreen}
+        </button>
+      </div>
+    </div>
+
+    <div class="hero-visual">
+      <div class="hero-poster">
+        <img
+          src="/ramen/hero-poster-768.jpg"
+          srcset="/ramen/hero-poster-768.jpg 768w, /ramen/hero-poster.png 1024w"
+          sizes="(max-width: 900px) calc(100vw - 32px), 44vw"
+          alt="Steaming bowl of Tokyo-style ramen with chashu, egg, and scallions"
+          loading="eager"
+          fetchpriority="high"
+          width="768"
+          height="768"
+        />
+      </div>
+    </div>
+  </div>
+
+  <div class="container hero-proof">
+    {content.trust.map((item, index) => (
+      <article class="proof-card">
+        <p class="eyebrow proof-eyebrow">{item}</p>
+        <p>{content.trustBody[index]}</p>
+      </article>
+    ))}
+  </div>
+</section>
+
+<style>
+  .hero-shell {
+    position: relative;
+    min-height: 100svh;
+    overflow: hidden;
+    padding: 112px 0 38px;
+  }
+  .hero-grain {
+    position: absolute;
+    inset: 0;
+    opacity: .08;
+    background-image:
+      radial-gradient(circle at 20% 20%, rgba(255,255,255,.18) 0 1px, transparent 1px),
+      radial-gradient(circle at 80% 30%, rgba(255,255,255,.12) 0 1px, transparent 1px),
+      radial-gradient(circle at 55% 70%, rgba(255,255,255,.12) 0 1px, transparent 1px);
+    background-size: 18px 18px, 24px 24px, 22px 22px;
+    pointer-events: none;
+  }
+  .hero-wash {
+    position: absolute;
+    inset: auto -12% -16% auto;
+    width: 42rem;
+    height: 42rem;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(195,75,45,.24), transparent 62%);
+    filter: blur(40px);
+    animation: drift 12s ease-in-out infinite;
+  }
+  .hero-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, .9fr);
+    gap: 28px;
+    align-items: center;
+    min-height: calc(100svh - 156px);
+  }
+  .hero-copy {
+    max-width: 36rem;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(241,182,107,.18);
+    background: rgba(195,75,45,.12);
+    color: rgba(243,230,208,.92);
+    font-family: "Trebuchet MS", "Helvetica Neue", sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .hero-title {
+    font-size: clamp(2.7rem, 6.2vw, 5rem);
+    max-width: 14ch;
+    margin-top: 16px;
+    text-wrap: balance;
+  }
+  .hero-body {
+    max-width: 32rem;
+    margin: 18px 0 0;
+    font-size: 1rem;
+  }
+  .hero-cta-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+  }
+  .hero-cta-row :global(.pill-button),
+  .hero-cta-row :global(.ghost-button) {
+    min-width: 176px;
+  }
+  .hero-visual {
+    display: flex;
+    justify-content: center;
+  }
+  .hero-poster {
+    width: min(100%, 520px);
+    overflow: hidden;
+    aspect-ratio: 1 / 1;
+    max-height: min(72vh, 680px);
+    border-radius: 32px;
+    animation: floatPoster 8s ease-in-out infinite;
+  }
+  .hero-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+  }
+  .hero-proof {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .proof-card {
+    position: relative;
+    padding: 16px;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,.08);
+    background:
+      linear-gradient(180deg, rgba(255,245,232,.05), rgba(255,245,232,.02)),
+      rgba(28,21,18,.74);
+    backdrop-filter: blur(12px);
+  }
+  .proof-eyebrow {
+    margin-bottom: 10px;
+  }
+  .proof-card p:last-child {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.6;
+    font-size: .93rem;
+  }
+  @keyframes drift {
+    0%, 100% {
+      transform: translate3d(0, 0, 0);
+    }
+    50% {
+      transform: translate3d(-24px, -18px, 0);
+    }
+  }
+  @keyframes floatPoster {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+  @media (max-width: 900px) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+      min-height: auto;
+    }
+    .hero-copy,
+    .hero-visual {
+      justify-self: center;
+      width: 100%;
+    }
+    .hero-proof {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 640px) {
+    .hero-shell {
+      padding-top: 108px;
+    }
+    .hero-title {
+      max-width: 16ch;
+      font-size: clamp(1.85rem, 7vw, 2.55rem);
+    }
+    .hero-badge {
+      width: 100%;
+      justify-content: center;
+    }
+    .hero-cta-row {
+      width: 100%;
+    }
+    .hero-cta-row :global(.pill-button),
+    .hero-cta-row :global(.ghost-button) {
+      width: 100%;
+    }
+    .hero-proof {
+      grid-template-columns: 1fr;
+    }
+    .hero-visual {
+      margin-top: 6px;
+    }
+    .hero-poster {
+      width: min(100%, 380px);
+      aspect-ratio: 0.92 / 1;
+      max-height: 43svh;
+      border-radius: 24px;
+    }
+    .hero-poster img {
+      object-position: center center;
+    }
+  }
+</style>

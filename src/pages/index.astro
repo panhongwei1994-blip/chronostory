@@ -1,0 +1,22 @@
+---
+import BossTimerApp from "../components/BossTimerApp.vue";
+import "../styles/maple.css";
+---
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>冒险岛 BOSS 战队协同计时器 | Maple Channel Watch</title>
+    <meta name="description" content="冒险岛 Boss 刷新计时器，支持游戏屏幕画面自动识别捕获、寒霜冰龙(10m)、黑金刚(30m)、鱼头(30m)，战队全服实时协同，亚服/美服当地凌晨01:00自动重置。" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 引入 Tesseract.js 纯前端网页 OCR 识别引擎 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  </head>
+  <body>
+    <main>
+      <BossTimerApp client:load />
+    </main>
+  </body>
+</html>

@@ -1,0 +1,251 @@
+---
+import { buildAdminHref, type AdminLang, type AdminMode } from "@/lib/admin-links";
+
+interface Props {
+  lang: AdminLang;
+  mode: AdminMode;
+  pathname: string;
+  searchParams: URLSearchParams;
+  activeNav: "orders" | "products" | "settings" | "delivery";
+  eyebrow: string;
+  title: string;
+  copy: string;
+  navLabels: {
+    orders: string;
+    delivery?: string;
+    settings: string;
+  };
+  langLabels?: {
+    en: string;
+    zh: string;
+  };
+  modeLabels?: {
+    front: string;
+    kitchen: string;
+  };
+  compact?: boolean;
+  canManageSettings?: boolean;
+}
+
+const {
+  lang,
+  mode,
+  pathname,
+  searchParams,
+  activeNav,
+  eyebrow,
+  title,
+  copy,
+  navLabels,
+  langLabels = { en: "EN", zh: "中文" },
+  modeLabels = { front: "Front mode", kitchen: "Kitchen mode" },
+  compact = false,
+  canManageSettings = true,
+} = Astro.props;
+
+const frontOrdersHref = buildAdminHref("/admin/orders", searchParams, { lang, mode: "front", viewAll: false });
+const settingsHref = buildAdminHref("/admin/settings", searchParams, { lang, mode, viewAll: false });
+const kitchenHref = buildAdminHref("/admin/orders", searchParams, { lang, mode: "kitchen", viewAll: false });
+const deliveryHref = buildAdminHref("/admin/delivery", searchParams, { lang, mode: "front", viewAll: false });
+const langEnHref = buildAdminHref(pathname, searchParams, { lang: "en", mode });
+const langZhHref = buildAdminHref(pathname, searchParams, { lang: "zh", mode });
+const installLabel = lang === "zh" ? "安装后台" : "Install admin";
+const installManualLabel = lang === "zh"
+  ? "如果没有弹出安装窗口，请使用浏览器分享菜单添加到主屏幕。"
+  : "If no install prompt appears, use the browser share menu and add it to the home screen.";
+---
+
+<div class="admin-header-shell">
+  <nav class="admin-nav card">
+    {canManageSettings ? (
+      <a class:list={["nav-item", { active: activeNav === "orders" && mode === "front" }]} href={frontOrdersHref}>{modeLabels.front}</a>
+    ) : null}
+    <a class:list={["nav-item", { active: activeNav === "orders" && mode === "kitchen" }]} href={kitchenHref}>{modeLabels.kitchen}</a>
+    <a class:list={["nav-item", { active: activeNav === "delivery" }]} href={deliveryHref}>{navLabels.delivery ?? "Delivery"}</a>
+  </nav>
+
+  <div class:list={["page-head", { compact }]}>
+    <div class="page-copy">
+      <p class="eyebrow">{eyebrow}</p>
+      <h1 class="section-title">{title}</h1>
+      <p class="section-copy">{copy}</p>
+    </div>
+    <div class="header-actions">
+      {canManageSettings ? (
+        <a class:list={["header-shortcut", { active: activeNav === "settings" || activeNav === "products" }]} href={settingsHref}>{navLabels.settings}</a>
+      ) : null}
+      <button class="header-shortcut install-admin-trigger" type="button" data-install-admin data-manual-message={installManualLabel}>
+        {installLabel}
+      </button>
+      <div class="admin-lang-switch">
+        <a class:list={["lang-button", { active: lang === "en" }]} href={langEnHref}>{langLabels.en}</a>
+        <a class:list={["lang-button", { active: lang === "zh" }]} href={langZhHref}>{langLabels.zh}</a>
+      </div>
+      <slot name="actions" />
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  document.addEventListener("click", async (event) => {
+    const trigger = event.target instanceof Element ? event.target.closest("[data-install-admin]") : null;
+    if (!(trigger instanceof HTMLButtonElement)) return;
+
+    const originalLabel = trigger.textContent || "";
+    const installer = window.installSoraAdminApp;
+    const result = typeof installer === "function" ? await installer() : { status: "manual" };
+
+    if (result.status !== "accepted") {
+      trigger.textContent = trigger.dataset.manualMessage || originalLabel;
+      window.setTimeout(() => {
+        trigger.textContent = originalLabel;
+      }, 4500);
+    }
+  });
+</script>
+
+<style>
+  .admin-header-shell {
+    display: grid;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .admin-nav {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 24px;
+    background: #ffffff;
+    border: 1px solid rgba(45,108,223,.12);
+    width: fit-content;
+    box-shadow: 0 16px 36px rgba(16,78,157,.08);
+  }
+  .nav-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 0 18px;
+    border-radius: 16px;
+    font-size: 0.8125rem;
+    font-weight: 800;
+    color: var(--admin-muted);
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+  .nav-item:hover {
+    color: var(--admin-accent);
+    background: rgba(45,108,223,.06);
+    border-color: rgba(45,108,223,.1);
+  }
+  .nav-item.active {
+    background: linear-gradient(135deg, #174ea6, #2d6cdf);
+    color: #ffffff;
+    box-shadow: 0 10px 22px rgba(45,108,223,.22);
+  }
+  .page-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 16px;
+  }
+  .page-head.compact {
+    align-items: center;
+  }
+  .page-copy {
+    display: grid;
+    gap: 8px;
+  }
+  .page-copy .section-copy {
+    max-width: 46rem;
+    margin: 0;
+    color: rgba(18,49,75,.72);
+  }
+  .header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .header-shortcut {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(45,108,223,.14);
+    background: #ffffff;
+    color: rgba(18,49,75,.68);
+    font-family: "Trebuchet MS", "Helvetica Neue", sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  button.header-shortcut {
+    cursor: pointer;
+  }
+  .install-admin-trigger {
+    max-width: min(72vw, 18rem);
+  }
+  .header-shortcut:hover {
+    color: #174ea6;
+    border-color: rgba(45,108,223,.24);
+    background: rgba(45,108,223,.04);
+  }
+  .header-shortcut.active {
+    background: rgba(45,108,223,.08);
+    color: #174ea6;
+    border-color: rgba(45,108,223,.18);
+  }
+  .admin-lang-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(45,108,223,.14);
+    background: #ffffff;
+  }
+  .lang-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 999px;
+    color: rgba(18,49,75,.68);
+    font-family: "Trebuchet MS", "Helvetica Neue", sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .lang-button.active {
+    background: rgba(45,108,223,.08);
+    color: #174ea6;
+  }
+  @media (max-width: 760px) {
+    .admin-nav {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .nav-item {
+      min-height: 46px;
+      padding: 0 8px;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    .page-head {
+      display: grid;
+    }
+    .header-actions {
+      justify-content: flex-start;
+    }
+  }
+</style>
