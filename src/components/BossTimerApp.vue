@@ -204,19 +204,16 @@
       </div>
     </div>
 
-    <!-- 底部：游戏屏幕 AI 识别捕获面板 (默认折叠) -->
+    <!-- 底部：游戏屏幕 AI 识别捕获面板 (常驻展开，取消折叠隐藏) -->
     <div class="screen-monitor-panel">
-      <div class="panel-header-toggle" @click="showMonitorPanel = !showMonitorPanel">
+      <div class="panel-header-toggle" style="cursor:default;">
         <div class="panel-header-title">
-          <span>🎥 游戏屏幕 AI 自动监测 (血条检测 / 📸 自动识别换线面板频道)</span>
+          <span>🎥 游戏屏幕 AI 自动监测 (血条检测 / 📸 对比删除不存在频道)</span>
           <span v-if="isScanning" class="scan-live-badge">● 正在 AI 监控中</span>
         </div>
-        <button class="panel-toggle-btn">
-          {{ showMonitorPanel ? '▲ 折叠隐藏' : '▼ 展开面板' }}
-        </button>
       </div>
 
-      <div v-show="showMonitorPanel" class="panel-content-body">
+      <div class="panel-content-body">
         <div class="monitor-controls" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
           <button v-if="!isScanning" class="btn-start-monitor" @click="startScreenMonitor">
             🎥 绑定游戏窗口
@@ -572,35 +569,31 @@ function playAlertSound() {
 }
 
 // 🎥 游戏屏幕 AI 监测
-async function startScreenMonitor() {
-  showMonitorPanel.value = true;
-  monitorStatus.value = '正在请求屏幕共享权限，请在弹出的对话框中选择枫之谷游戏窗口...';
-
+function startScreenMonitor() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    monitorStatus.value = '⚠️ 您的浏览器暂不支持屏幕捕获（请使用 Chrome / Edge 浏览器并在 HTTPS 环境下访问）';
+    monitorStatus.value = '⚠️ 您的浏览器暂不支持屏幕捕获（请使用电脑版 Chrome / Edge / Brave 浏览器，并在 HTTPS 加密网站下使用此功能）';
     return;
   }
 
-  try {
-    mediaStream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        // @ts-ignore
-        displaySurface: 'window',
-      },
-      audio: false,
-    });
+  monitorStatus.value = '正在请求屏幕共享权限，请在弹出的对话框中选择枫之谷游戏窗口...';
 
+  navigator.mediaDevices.getDisplayMedia({
+    video: {
+      // @ts-ignore
+      displaySurface: 'window',
+    },
+    audio: false,
+  }).then(async (stream) => {
+    mediaStream = stream;
     await nextTick();
-
     if (videoRef.value) {
-      videoRef.value.srcObject = mediaStream;
+      videoRef.value.srcObject = stream;
       videoRef.value.play().catch(() => {});
     }
-
     isScanning.value = true;
-    monitorStatus.value = '🎯 游戏窗口绑定成功！全自动血条监测与切线追踪已实时就绪！';
+    monitorStatus.value = '🎯 游戏窗口绑定成功！全自动血条监测与频道对比已实时就绪！';
 
-    mediaStream.getVideoTracks()[0].onended = () => {
+    stream.getVideoTracks()[0].onended = () => {
       stopScreenMonitor();
     };
 
@@ -608,15 +601,14 @@ async function startScreenMonitor() {
     scanTimer = setInterval(() => {
       captureAndAnalyzeFrame();
     }, 1200);
-
-  } catch (err: any) {
+  }).catch((err) => {
     isScanning.value = false;
     if (err.name === 'NotAllowedError') {
-      monitorStatus.value = '⚠️ 您取消了屏幕窗口授权，请重新点击【🎥 绑定游戏窗口】并在弹窗中选择【允许】。';
+      monitorStatus.value = '⚠️ 您取消了屏幕授权。请重新点击【🎥 绑定游戏窗口】并在浏览器顶部弹窗中点击【允许】。';
     } else {
-      monitorStatus.value = `⚠️ 绑定失败: ${err.message || '请确保在 Chrome/Edge 浏览器并使用 HTTPS 域名访问'}`;
+      monitorStatus.value = `⚠️ 绑定失败: ${err.message || '请确保使用 Chrome/Edge 电脑版浏览器并在 HTTPS 下访问'}`;
     }
-  }
+  });
 }
 
 function stopScreenMonitor() {
