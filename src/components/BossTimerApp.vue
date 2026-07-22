@@ -1,9 +1,5 @@
 <template>
   <div id="app-container">
-    <!-- Toast 反馈通知 -->
-    <div v-if="toastMsg" class="toast-notification">
-      <span>{{ toastMsg }}</span>
-    </div>
 
     <!-- 标头 -->
     <header class="header-banner">
@@ -311,14 +307,8 @@ let wasHpBarPresent = false;
 let hpBarDisappearCount = 0;
 let mediaStream: MediaStream | null = null;
 let scanTimer: any = null;
-let toastTimer: any = null;
-
 function triggerToast(msg: string) {
-  toastMsg.value = msg;
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastMsg.value = '';
-  }, 2200);
+  // 无弹窗模式：极速无干预操作
 }
 
 const currentBossName = computed(() => {
@@ -498,24 +488,19 @@ function onCardClick(item: TeamChannelItem) {
 function triggerTimerWithMinutes(item: TeamChannelItem, minutes: number) {
   const itemBossId = item.bossId || globalBossId.value;
   const itemBossName = item.bossName || currentBossName.value;
+  const sec = minutes * 60;
+  const now = Date.now();
 
-  // 1 秒确认延迟
-  item.cooldown = true;
-  item.started = false;
-  item.remainingSec = 0;
+  // 0ms 瞬间响应：立刻高亮并开启倒计时
+  item.cooldown = false;
+  item.bossId = itemBossId;
+  item.bossName = itemBossName;
+  item.totalSec = sec;
+  item.targetEndTime = now + sec * 1000;
+  item.remainingSec = sec;
+  item.started = true;
+
   saveLocalChannels();
-
-  setTimeout(() => {
-    const sec = minutes * 60;
-    item.cooldown = false;
-    item.bossId = itemBossId;
-    item.bossName = itemBossName;
-    item.totalSec = sec;
-    item.targetEndTime = Date.now() + sec * 1000;
-    item.remainingSec = sec;
-    item.started = true;
-    saveLocalChannels();
-  }, 1000);
 }
 
 function deleteChannel(id: string) {
