@@ -26,7 +26,8 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   const now = Date.now();
   const serverInfo = getServerTimeInfo(server, now);
-  const prevResetMs = getPreviousResetTimestamp(server, now);
+  // 保留过去 18 小时内的所有最新看守记录，防止跨美服/亚服时区计算遗漏
+  const cutoffMs = now - 18 * 3600 * 1000;
 
   let records: PublicTimerRecord[] = [];
 
@@ -38,17 +39,17 @@ export const GET: APIRoute = async ({ request, locals }) => {
         .prepare(
           `SELECT * FROM public_boss_timers WHERE server = ? AND updated_at >= ? ORDER BY respawn_at ASC`
         )
-        .bind(server, prevResetMs)
+        .bind(server, cutoffMs)
         .all();
       records = (results as PublicTimerRecord[]).filter((r) => (r.room || 'default') === room);
     } catch (e) {
       records = Array.from(memoryStore.values()).filter(
-        (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= prevResetMs
+        (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= cutoffMs
       );
     }
   } else {
     records = Array.from(memoryStore.values()).filter(
-      (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= prevResetMs
+      (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= cutoffMs
     );
   }
 
