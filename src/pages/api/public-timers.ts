@@ -31,9 +31,22 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   let records: PublicTimerRecord[] = [];
 
-  // 尝试从 Cloudflare D1 获取
+  // 1. 优先尝试从 Cloudflare KV 读取
+  const kv = (locals as any)?.runtime?.env?.KV;
   const db = (locals as any)?.runtime?.env?.DB;
-  if (db) {
+
+  if (kv) {
+    try {
+      const raw = await kv.get(`timers_${server}_${room}`);
+      if (raw) {
+        const list: PublicTimerRecord[] = JSON.parse(raw);
+        records = list.filter((r) => r.updated_at >= cutoffMs);
+      }
+    } catch (e) {}
+  }
+
+  // 2. 次选从 Cloudflare D1 读取
+  if (records.length === 0 && db) {
     try {
       const { results } = await db
         .prepare(
@@ -42,12 +55,11 @@ export const GET: APIRoute = async ({ request, locals }) => {
         .bind(server, cutoffMs)
         .all();
       records = (results as PublicTimerRecord[]).filter((r) => (r.room || 'default') === room);
-    } catch (e) {
-      records = Array.from(memoryStore.values()).filter(
-        (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= cutoffMs
-      );
-    }
-  } else {
+    } catch (e) {}
+  }
+
+  // 3. 内存兜底模式
+  if (records.length === 0 && !kv && !db) {
     records = Array.from(memoryStore.values()).filter(
       (r) => r.server === server && (r.room || 'default') === room && r.updated_at >= cutoffMs
     );
@@ -114,8 +126,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
       updated_at: now,
     };
 
-    // 写入 D1
+    // 1. 写入 Cloudflare KV 绑定
+    const kv = (locals as any)?.runtime?.env?.KV;
     const db = (locals as any)?.runtime?.env?.DB;
+
+    if (kv) {
+      try {
+        const raw = await kv.get(`timers_${server}_${cleanRoom}`);
+        let list: PublicTimerRecord[] = raw ? JSON.parse(raw) : [];
+        list = list.filter((r) => r.id !== id);
+        list.push(record);
+        // 保存 24 小时过期
+        await kv.put(`timers_${server}_${cleanRoom}`, JSON.stringify(list), { expirationTtl: 86400 });
+      } catch (e) {}
+    }
+
+    // 2. 写入 D1 数据库
     if (db) {
       try {
         await db
@@ -143,13 +169,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
             record.updated_at
           )
           .run();
-      } catch (e) {
-        console.warn('D1 write fallback to memory store:', e);
-        memoryStore.set(id, record);
-      }
-    } else {
-      memoryStore.set(id, record);
+      } catch (e) {}
     }
+
+    memoryStore.set(id, record);
 
     return new Response(
       JSON.stringify({
