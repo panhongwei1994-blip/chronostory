@@ -981,7 +981,8 @@ async function fetchCloudRecords() {
 }
 
 function syncCloudToLocal() {
-  // 战队模式下：强制以云端最新公布的频道与击杀倒计时为准对齐
+  // 战队协同模式下：精准以云端最新公布的频道与击杀倒计时为准对齐
+  const currentNow = Date.now();
   cloudRecords.value.forEach((record) => {
     const numMatch = record.channel.replace(/\D/g, '');
     if (!numMatch) return;
@@ -991,21 +992,17 @@ function syncCloudToLocal() {
       (i) => i.channelNum === chNum && i.bossId === record.boss_id
     );
 
-    const remainingSec = Math.max(0, Math.floor((record.respawn_at - Date.now()) / 1000));
+    const remainingSec = Math.max(0, Math.floor((record.respawn_at - currentNow) / 1000));
 
     if (existing) {
-      // 只要云端的击杀结束时间更新，或者倒计时时间差超过 2 秒，直接强制对齐云端
-      if (Math.abs(existing.targetEndTime - record.respawn_at) > 2000) {
-        existing.targetEndTime = record.respawn_at;
-        existing.bossId = record.boss_id;
-        existing.bossName = record.boss_name;
-        existing.totalSec = (record.respawn_minutes || 10) * 60;
-        existing.remainingSec = remainingSec;
-        existing.started = true;
-        existing.cooldown = false;
-      }
+      existing.targetEndTime = record.respawn_at;
+      existing.bossId = record.boss_id;
+      existing.bossName = record.boss_name;
+      existing.totalSec = (record.respawn_minutes || 10) * 60;
+      existing.remainingSec = remainingSec;
+      existing.started = true;
+      existing.cooldown = false;
     } else {
-      // 若本地还没有队友报时的这个频道，自动加入全队共享看板
       teamChannels.value.push({
         id: `cloud_${record.server}_CH${chNum}_${record.boss_id}`,
         channelNum: chNum,
@@ -1017,6 +1014,13 @@ function syncCloudToLocal() {
         started: true,
         cooldown: false,
       });
+    }
+  });
+
+  // 立即在主线程强制刷新视图，消除 1 秒的渲染时差
+  teamChannels.value.forEach((item) => {
+    if (item.started && item.targetEndTime > 0) {
+      item.remainingSec = Math.max(0, Math.floor((item.targetEndTime - currentNow) / 1000));
     }
   });
 
