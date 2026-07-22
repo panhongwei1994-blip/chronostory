@@ -971,7 +971,7 @@ function loadLocalChannels() {
 async function fetchCloudRecords() {
   if (!isTeamMode.value) return; // 个人模式下不同步云端公共数据
   try {
-    const res = await fetch(`/api/public-timers?server=${activeServer.value}`);
+    const res = await fetch(`/api/public-timers?server=${activeServer.value}&_t=${Date.now()}`);
     const json = await res.json();
     if (json.success && Array.isArray(json.records)) {
       cloudRecords.value = json.records;
