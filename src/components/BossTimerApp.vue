@@ -260,7 +260,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { getServerTimeInfo, type ServerRegion } from '../utils/timezone';
 
 export interface TeamChannelItem {
@@ -573,33 +573,49 @@ function playAlertSound() {
 
 // 🎥 游戏屏幕 AI 监测
 async function startScreenMonitor() {
+  showMonitorPanel.value = true;
+  monitorStatus.value = '正在请求屏幕共享权限，请在弹出的对话框中选择枫之谷游戏窗口...';
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    monitorStatus.value = '⚠️ 您的浏览器暂不支持屏幕捕获（请使用 Chrome / Edge 浏览器并在 HTTPS 环境下访问）';
+    return;
+  }
+
   try {
-    monitorStatus.value = '请求游戏窗口画面权限...';
     mediaStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      video: {
+        // @ts-ignore
+        displaySurface: 'window',
+      },
       audio: false,
     });
 
-    showMonitorPanel.value = true;
+    await nextTick();
 
     if (videoRef.value) {
       videoRef.value.srcObject = mediaStream;
+      videoRef.value.play().catch(() => {});
     }
 
     isScanning.value = true;
-    monitorStatus.value = '🎯 屏幕绑定成功！全自动 Boss 顶端血条监测已就绪';
+    monitorStatus.value = '🎯 游戏窗口绑定成功！全自动血条监测与切线追踪已实时就绪！';
 
     mediaStream.getVideoTracks()[0].onended = () => {
       stopScreenMonitor();
     };
 
+    if (scanTimer) clearInterval(scanTimer);
     scanTimer = setInterval(() => {
       captureAndAnalyzeFrame();
-    }, 1500);
+    }, 1200);
 
   } catch (err: any) {
     isScanning.value = false;
-    monitorStatus.value = '绑定中断或未授权画面读取。';
+    if (err.name === 'NotAllowedError') {
+      monitorStatus.value = '⚠️ 您取消了屏幕窗口授权，请重新点击【🎥 绑定游戏窗口】并在弹窗中选择【允许】。';
+    } else {
+      monitorStatus.value = `⚠️ 绑定失败: ${err.message || '请确保在 Chrome/Edge 浏览器并使用 HTTPS 域名访问'}`;
+    }
   }
 }
 
