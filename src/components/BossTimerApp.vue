@@ -108,8 +108,14 @@
             🔄 恢复已删 {{ hiddenChannels.length }} 频道
           </button>
         </div>
-        <div v-if="screenshotOcrStatus" style="font-size:11px; color:#94a3b8; margin-top:4px; padding:4px 8px; background:rgba(0,0,0,0.3); border-radius:4px; word-break:break-all;">
+        <div style="margin-top:4px; font-size:11px; color:#fbbf24; word-break:break-all;">
           {{ screenshotOcrStatus }}
+        </div>
+        
+        <!-- OCR 调试视窗 -->
+        <div v-if="ocrDebugImage" style="margin-top: 10px; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <p style="font-size: 11px; color: #94a3b8; margin: 0 0 6px 0;">🔍 AI 视觉预处理结果 (用于分析遗漏原因):</p>
+          <img :src="ocrDebugImage" style="max-width: 100%; border-radius: 4px; image-rendering: pixelated;" />
         </div>
       </div>
 
@@ -338,8 +344,13 @@ const matrixEndCh = ref<number>(130);
 // 📸 截图识别状态
 const screenshotOcrStatus = ref<string>('');
 const channelScreenshotInput = ref<HTMLInputElement | null>(null);
+const ocrDebugImage = ref<string>('');
 
-// 截图上传识别频道：用户截图换线弹窗 → OCR 识别 → 自动删除不存在频道
+onMounted(() => {
+  window.addEventListener('ocr-debug-image', (e: Event) => {
+    ocrDebugImage.value = (e as CustomEvent).detail;
+  });
+});
 async function onScreenshotUploaded(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -358,29 +369,57 @@ async function onScreenshotUploaded(event: Event) {
       img.src = url;
     });
 
+    const canvas1x = document.createElement('canvas');
+    canvas1x.width = img.width;
+    canvas1x.height = img.height;
+    const ctx1x = canvas1x.getContext('2d');
+    if (!ctx1x) return;
+    ctx1x.drawImage(img, 0, 0);
+
+    // 终极黑科技：1x 原生像素级颜色提纯。
+    // MapleStory 是像素游戏，字体边缘没有抗锯齿。我们在 1x 尺寸下直接把真正的文字像素抓出来。
+    const imgData = ctx1x.getImageData(0, 0, img.width, img.height);
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      const r = imgData.data[i];
+      const g = imgData.data[i+1];
+      const b = imgData.data[i+2];
+
+      // 黑字判断：RGB都很低
+      const isBlackText = r < 100 && g < 100 && b < 100;
+      // 白字判断：RGB都很高 (严格一点，避免把浅灰背景当成白字)
+      const isWhiteText = r > 240 && g > 240 && b > 240;
+
+      if (isBlackText || isWhiteText) {
+        // 提取文字，涂成纯黑
+        imgData.data[i] = 0;
+        imgData.data[i+1] = 0;
+        imgData.data[i+2] = 0;
+      } else {
+        // 其他所有东西（浅灰背景、深灰背景、红背景、彩色进度条、粉色三角箭头）全部涂成纯白！
+        imgData.data[i] = 255;
+        imgData.data[i+1] = 255;
+        imgData.data[i+2] = 255;
+      }
+      imgData.data[i+3] = 255;
+    }
+    ctx1x.putImageData(imgData, 0, 0);
+
+    // 提纯后，放大 3 倍并使用平滑算法，让 Tesseract 看到丝滑的黑底白字
     const tmpCanvas = document.createElement('canvas');
-    // 放大 2.5 倍并保持平滑，让 Tesseract 更容易识别像素字体
-    const scale = 2.5;
+    const scale = 3;
     tmpCanvas.width = img.width * scale;
-    // 高度乘以 2，用于容纳【正常图】和【反色图】
-    tmpCanvas.height = img.height * scale * 2;
+    tmpCanvas.height = img.height * scale;
     const ctx = tmpCanvas.getContext('2d');
-    if (!ctx) { screenshotOcrStatus.value = '⚠️ Canvas 初始化失败'; return; }
-
+    if (!ctx) return;
     ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(canvas1x, 0, 0, tmpCanvas.width, tmpCanvas.height);
 
-    // 核心黑科技 1：极致对比度提纯。
-    // 上半部分：提亮 1.5 倍并拉爆对比度。这会让浅灰背景直接过曝成纯白，而黑色字保持纯黑。
-    ctx.filter = 'grayscale(100%) brightness(150%) contrast(300%)';
-    ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
-
-    // 下半部分：先反相，再提亮拉爆对比。这会让深灰/红色的满人频道背景过曝成纯白，白色字反相后变成纯黑。
-    ctx.filter = 'grayscale(100%) invert(100%) brightness(150%) contrast(300%)';
-    ctx.drawImage(img, 0, img.height * scale, img.width * scale, img.height * scale);
-    ctx.filter = 'none';
-
+    // 暴露预处理图像供调试
     const combinedImgUrl = tmpCanvas.toDataURL('image/jpeg');
-    screenshotOcrStatus.value = '🔍 图像双重极性增强完毕，正在进行 AI 并行识别...';
+    // 把图片存到一个全局可见的 ref，如果后续识别出问题，用户可以直接看到 AI 的“眼睛”看到了什么
+    window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: combinedImgUrl }));
+
+    screenshotOcrStatus.value = '🔍 像素级去噪完毕，正在进行 AI 深度识别...';
 
     // @ts-ignore
     const TesseractLib = window.Tesseract;
@@ -391,14 +430,14 @@ async function onScreenshotUploaded(event: Event) {
 
     const worker = await TesseractLib.createWorker('eng');
     await worker.setParameters({
-      tessedit_char_whitelist: 'CHch.0123456789/<>: ',
-      tessedit_pageseg_mode: '6',
+      // 放开白名单，使用 PSM 11 (Sparse text) 避免跨列粘连
+      tessedit_pageseg_mode: '11',
     });
     const ret = await worker.recognize(tmpCanvas);
     await worker.terminate();
 
     const rawText = ret.data.text || '';
-    screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300)}"`;
+    screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300).replace(/\\n/g, ' ')}"`;
 
     // 提取频道号
     const regex = /(?:[Cc<>]?\s*[Hh])[.\s_-]*(\d{1,5})/gi;
@@ -410,14 +449,11 @@ async function onScreenshotUploaded(event: Event) {
 
     matches.forEach((m) => {
       let str = m[1];
-      // 核心黑科技 2：降维切割法。
-      // 如果 Tesseract 把频道和人数粘连了（比如 CH.36 13/25 变成了 361325）
-      // 我们通过用户限定的范围（比如最大 46），从右向左逐位切断，直到它落入合理区间！
       while (str.length > 0) {
         const val = parseInt(str, 10);
         if (val >= start && val <= end) {
           gameChannels.add(val);
-          break; // 找到完美匹配的合法频道，停止切割
+          break;
         }
         str = str.substring(0, str.length - 1);
       }
