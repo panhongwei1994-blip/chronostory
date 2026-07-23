@@ -369,31 +369,41 @@ async function onScreenshotUploaded(event: Event) {
       img.src = url;
     });
 
-    // 回归最本质的无损图像处理，丢弃破坏性的阈值过滤
-    const tmpCanvas = document.createElement('canvas');
     const scale = 3;
-    tmpCanvas.width = img.width * scale;
-    tmpCanvas.height = img.height * scale * 2;
-    const ctx = tmpCanvas.getContext('2d');
-    if (!ctx) return;
-    
-    // 关键：保留抗锯齿，这对 Tesseract 识别字体至关重要
-    ctx.imageSmoothingEnabled = true;
+    const w = img.width * scale;
+    const h = img.height * scale;
 
-    // 上半区：纯净灰度图（完美保留黑字，如 CH.1393）
-    ctx.filter = 'grayscale(100%)';
-    ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
+    // 图像 1：正常灰度（用于捕获浅色背景的频道，如 CH.2, CH.5）
+    const canvasNormal = document.createElement('canvas');
+    canvasNormal.width = w; canvasNormal.height = h;
+    const ctx1 = canvasNormal.getContext('2d');
+    if (ctx1) {
+      ctx1.imageSmoothingEnabled = true;
+      ctx1.filter = 'grayscale(100%) contrast(120%)';
+      ctx1.drawImage(img, 0, 0, w, h);
+    }
 
-    // 下半区：反相灰度图（完美保留白字，如蓝色的 CH.1542 和红色的 CH.1557）
-    ctx.filter = 'grayscale(100%) invert(100%)';
-    ctx.drawImage(img, 0, img.height * scale, img.width * scale, img.height * scale);
-    ctx.filter = 'none';
+    // 图像 2：反相灰度（用于捕获深色/高亮背景的频道，如 CH.9, CH.16）
+    const canvasInvert = document.createElement('canvas');
+    canvasInvert.width = w; canvasInvert.height = h;
+    const ctx2 = canvasInvert.getContext('2d');
+    if (ctx2) {
+      ctx2.imageSmoothingEnabled = true;
+      ctx2.filter = 'grayscale(100%) invert(100%) contrast(120%)';
+      ctx2.drawImage(img, 0, 0, w, h);
+    }
 
-    // 暴露给调试 UI
-    const combinedImgUrl = tmpCanvas.toDataURL('image/jpeg');
-    window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: combinedImgUrl }));
+    // 更新调试图像（展示拼接效果供人工查看）
+    const debugCanvas = document.createElement('canvas');
+    debugCanvas.width = w; debugCanvas.height = h * 2;
+    const debugCtx = debugCanvas.getContext('2d');
+    if (debugCtx) {
+      debugCtx.drawImage(canvasNormal, 0, 0);
+      debugCtx.drawImage(canvasInvert, 0, h);
+      window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: debugCanvas.toDataURL('image/jpeg') }));
+    }
 
-    screenshotOcrStatus.value = '🔍 无损灰度映射完成，正在使用稀疏矩阵 AI 引擎识别...';
+    screenshotOcrStatus.value = '🔍 已生成多重曝光视图，正在启动 AI 引擎分离识别...';
 
     // @ts-ignore
     const TesseractLib = window.Tesseract;
@@ -404,18 +414,22 @@ async function onScreenshotUploaded(event: Event) {
 
     const worker = await TesseractLib.createWorker('eng');
     await worker.setParameters({
-      // 必须有白名单，防止进度条干扰
       tessedit_char_whitelist: 'CHch.0123456789/<>: ',
-      // PSM 11 极其重要：稀疏文本。它把每个格子当成独立单词，彻底解决 CH.36 和 13/25 粘连的问题
       tessedit_pageseg_mode: '11',
     });
-    const ret = await worker.recognize(tmpCanvas);
+
+    screenshotOcrStatus.value = '🔍 正在扫描浅色底频道 (1/2)...';
+    const ret1 = await worker.recognize(canvasNormal);
+    
+    screenshotOcrStatus.value = '🔍 正在扫描深色底频道 (2/2)...';
+    const ret2 = await worker.recognize(canvasInvert);
+
     await worker.terminate();
 
-    const rawText = ret.data.text || '';
-    screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300).replace(/\\n/g, ' ')}"`;
+    const rawText = ret1.data.text + ' \\n ' + ret2.data.text;
+    screenshotOcrStatus.value = `OCR 原文合并: "${rawText.substring(0, 200).replace(/\\n/g, ' ')}"`;
 
-    // 提取频道号：兼容 ▶ 被识别为 < 或丢弃 C 的情况
+    // 提取频道号
     const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
     const matches = [...rawText.matchAll(regex)];
     const gameChannels = new Set<number>();
@@ -433,10 +447,8 @@ async function onScreenshotUploaded(event: Event) {
 
       let validChannels = [...gameChannels].filter(c => c >= start && c <= end).sort((a, b) => a - b);
 
-      // 智能感知升级：如果用户换了一个完全不同频段的区服（比如截图里的 1393~1576）
       if (validChannels.length === 0 && gameChannels.size > 0) {
         const sortedAll = [...gameChannels].sort((a, b) => a - b);
-        // 自动修正频道矩阵范围
         matrixStartCh.value = sortedAll[0];
         matrixEndCh.value = sortedAll[sortedAll.length - 1];
         saveChannelRange();
