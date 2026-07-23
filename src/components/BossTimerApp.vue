@@ -369,18 +369,17 @@ async function onScreenshotUploaded(event: Event) {
 
     ctx.imageSmoothingEnabled = true;
 
-    // 绘制上半部分：黑白高对比度 (捕获白底黑字的频道)
-    ctx.filter = 'grayscale(100%) contrast(180%)';
+    // 核心黑科技 1：极致对比度提纯。
+    // 上半部分：提亮 1.5 倍并拉爆对比度。这会让浅灰背景直接过曝成纯白，而黑色字保持纯黑。
+    ctx.filter = 'grayscale(100%) brightness(150%) contrast(300%)';
     ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
 
-    // 绘制下半部分：反相黑白高对比度 (捕获深底白字的频道，例如红色或深灰色的当前/高亮频道)
-    ctx.filter = 'grayscale(100%) invert(100%) contrast(180%)';
+    // 下半部分：先反相，再提亮拉爆对比。这会让深灰/红色的满人频道背景过曝成纯白，白色字反相后变成纯黑。
+    ctx.filter = 'grayscale(100%) invert(100%) brightness(150%) contrast(300%)';
     ctx.drawImage(img, 0, img.height * scale, img.width * scale, img.height * scale);
     ctx.filter = 'none';
 
-    // 转为 Blob url 提供给 Tesseract
     const combinedImgUrl = tmpCanvas.toDataURL('image/jpeg');
-
     screenshotOcrStatus.value = '🔍 图像双重极性增强完毕，正在进行 AI 并行识别...';
 
     // @ts-ignore
@@ -392,7 +391,6 @@ async function onScreenshotUploaded(event: Event) {
 
     const worker = await TesseractLib.createWorker('eng');
     await worker.setParameters({
-      // 加入斜杠和大于小于号，防止 Tesseract 为了强行匹配把 25/25 连到频道号上，同时兼容三角形被识别为 < 或 >
       tessedit_char_whitelist: 'CHch.0123456789/<>: ',
       tessedit_pageseg_mode: '6',
     });
@@ -402,25 +400,31 @@ async function onScreenshotUploaded(event: Event) {
     const rawText = ret.data.text || '';
     screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300)}"`;
 
-    // 提取频道号：放宽 C 的限制，因为高亮频道的 ▶ 箭头可能会和 C 粘连导致 C 无法识别，变成 H.16 或 <H.16
-    const regex = /(?:[Cc<>]?\s*[Hh])[.\s_-]*(\d{1,3})/gi;
+    // 提取频道号
+    const regex = /(?:[Cc<>]?\s*[Hh])[.\s_-]*(\d{1,5})/gi;
     const matches = [...rawText.matchAll(regex)];
     const gameChannels = new Set<number>();
+    
+    const start = matrixStartCh.value || 1;
+    const end = matrixEndCh.value || 400;
 
     matches.forEach((m) => {
-      const num = parseInt(m[1], 10);
-      if (!isNaN(num) && num >= 1 && num <= 999) {
-        gameChannels.add(num);
+      let str = m[1];
+      // 核心黑科技 2：降维切割法。
+      // 如果 Tesseract 把频道和人数粘连了（比如 CH.36 13/25 变成了 361325）
+      // 我们通过用户限定的范围（比如最大 46），从右向左逐位切断，直到它落入合理区间！
+      while (str.length > 0) {
+        const val = parseInt(str, 10);
+        if (val >= start && val <= end) {
+          gameChannels.add(val);
+          break; // 找到完美匹配的合法频道，停止切割
+        }
+        str = str.substring(0, str.length - 1);
       }
     });
 
     if (gameChannels.size > 0) {
-      const start = matrixStartCh.value || 1;
-      const end = matrixEndCh.value || 400;
-
-      const validChannels = [...gameChannels]
-        .filter(c => c >= start && c <= end)
-        .sort((a, b) => a - b);
+      const validChannels = [...gameChannels].sort((a, b) => a - b);
 
       if (validChannels.length === 0) {
         screenshotOcrStatus.value = `⚠️ 识别到的频道均不在当前范围 (${start}~${end}) 内。`;
