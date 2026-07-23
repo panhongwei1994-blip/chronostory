@@ -84,28 +84,7 @@
           />
         </div>
 
-        <!-- 截图上传识别 -->
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-          <button
-            class="monitor-action-btn monitor-btn-amber"
-            style="height:28px; font-size:11px; padding:0 10px;"
-            @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
-          >
-            📸 上传截图识别频道
-          </button>
 
-          <span v-if="isOcrLoading" style="font-size:12px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
-            ⏳ 正在读取频道画面，请稍候...
-          </span>
-
-          <input
-            ref="channelScreenshotInput"
-            type="file"
-            accept="image/*"
-            style="display:none;"
-            @change="onScreenshotUploaded"
-          />
-        </div>
       </div>
 
       <!-- 动态自适应网格矩阵 (左键一键报时，右键一键删除频道) -->
@@ -964,7 +943,38 @@ function captureAndAnalyzeFrame() {
 function onHpBarDisappeared() {
   const ch = boundChannelNum.value || 100;
   quickSelectCh(ch);
-  monitorStatus.value = `💀 血条消失，已自动判定 CH ${ch}【${currentBossName.value}】被击杀并开启倒计时。`;
+
+  // 🎯 结合方案 2 和 3：Boss 死亡后，AI 自动寻找下一个推荐切频目标
+  const candidates = matrixChannelList.value.filter(c => c !== ch);
+  let nextCh: number | null = null;
+
+  // 优先寻找已经倒计时结束（即 Boss 已复活）或者尚未开启倒计时的频道
+  const aliveCh = candidates.find(c => {
+    const item = teamChannels.value.find(t => Number(t.channelNum) === Number(c) && t.bossId === globalBossId.value);
+    return !item || !item.started || item.remainingSec <= 0;
+  });
+
+  if (aliveCh) {
+    nextCh = aliveCh;
+  } else if (candidates.length > 0) {
+    // 否则选择距离刷新时间最近（剩余时间最小）的频道
+    const sorted = [...candidates].sort((a, b) => {
+      const itemA = teamChannels.value.find(t => Number(t.channelNum) === Number(a) && t.bossId === globalBossId.value);
+      const itemB = teamChannels.value.find(t => Number(t.channelNum) === Number(b) && t.bossId === globalBossId.value);
+      return (itemA?.remainingSec || 0) - (itemB?.remainingSec || 0);
+    });
+    nextCh = sorted[0];
+  }
+
+  if (nextCh) {
+    boundChannelNum.value = nextCh; // 自动将当前绑定频道切换为下一个目标
+    monitorStatus.value = `💀 血条消失！CH ${ch}【${currentBossName.value}】已击杀倒计时开启。🎯 智能推荐下一个换线频道：CH ${nextCh}！`;
+    triggerToast(`🎯 CH ${ch} 已击杀！推荐切到 CH ${nextCh}`);
+    playAlertSound();
+  } else {
+    monitorStatus.value = `💀 血条消失，已自动判定 CH ${ch}【${currentBossName.value}】被击杀并开启倒计时。`;
+    playAlertSound();
+  }
 }
 
 function getOcrCropRect(mode: 'channel-panel' | 'full') {
