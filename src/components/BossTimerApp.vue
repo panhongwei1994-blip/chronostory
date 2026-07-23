@@ -93,6 +93,11 @@
           >
             📸 上传截图识别频道
           </button>
+
+          <span v-if="isOcrLoading" style="font-size:12px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
+            ⏳ 正在读取频道画面，请稍候...
+          </span>
+
           <input
             ref="channelScreenshotInput"
             type="file"
