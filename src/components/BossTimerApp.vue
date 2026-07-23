@@ -528,6 +528,12 @@ function cancelChMatrix(chNum: number) {
   teamChannels.value = teamChannels.value.filter(
     (i) => !(Number(i.channelNum) === Number(chNum) && String(i.bossId) === String(globalBossId.value))
   );
+
+  if (extraCustomChannels.value.includes(chNum)) {
+    extraCustomChannels.value = extraCustomChannels.value.filter(c => c !== chNum);
+    saveExtraChannels();
+  }
+
   // 加入隐藏黑名单，频道从矩阵中彻底消失
   if (!hiddenChannels.value.includes(chNum)) {
     hiddenChannels.value.push(chNum);
@@ -573,17 +579,41 @@ const activeCountingChannels = computed(() => {
     .sort((a, b) => a.remainingSec - b.remainingSec);
 });
 
+// 额外手动添加的频道列表
+const extraCustomChannels = ref<number[]>([]);
+
+function saveExtraChannels() {
+  localStorage.setItem(`maple_extra_channels_${activeServer.value}`, JSON.stringify(extraCustomChannels.value));
+}
+
+function loadExtraChannels() {
+  const raw = localStorage.getItem(`maple_extra_channels_${activeServer.value}`);
+  if (raw) {
+    try { extraCustomChannels.value = JSON.parse(raw); } catch (e) { extraCustomChannels.value = []; }
+  } else {
+    extraCustomChannels.value = [];
+  }
+}
+
 const matrixChannelList = computed(() => {
   const start = Math.max(1, matrixStartCh.value || 1);
   let end = Math.max(start, matrixEndCh.value || start);
   if (end - start > 400) end = start + 400;
-  const list: number[] = [];
+
+  const set = new Set<number>();
   for (let c = start; c <= end; c++) {
     if (!hiddenChannels.value.includes(c)) {
-      list.push(c);
+      set.add(c);
     }
   }
-  return list;
+
+  extraCustomChannels.value.forEach((c) => {
+    if (!hiddenChannels.value.includes(c)) {
+      set.add(c);
+    }
+  });
+
+  return [...set].sort((a, b) => a - b);
 });
 
 function selectBoss(bossId: string) {
@@ -673,7 +703,15 @@ function submitNewChannel() {
   const mins = customMinutes.value && customMinutes.value > 0 ? customMinutes.value : currentBossMinutes.value;
 
   // 保持系统识别的频道范围 (matrixStartCh ~ matrixEndCh) 绝对不变
-  // 若该频道在当前范围之内且曾被隐藏，自动解除隐藏
+  // 若该频道在范围之外，单独加入 extraCustomChannels，使它直接挂载在频道阵列中！
+  if (ch < matrixStartCh.value || ch > matrixEndCh.value) {
+    if (!extraCustomChannels.value.includes(ch)) {
+      extraCustomChannels.value.push(ch);
+      saveExtraChannels();
+    }
+  }
+
+  // 若该频道曾被隐藏，自动解除隐藏
   if (hiddenChannels.value.includes(ch)) {
     hiddenChannels.value = hiddenChannels.value.filter(c => c !== ch);
     saveHiddenChannels();
@@ -819,6 +857,7 @@ onMounted(() => {
   loadChannelRange();
   loadLocalChannels();
   loadHiddenChannels();
+  loadExtraChannels();
 
   timerInterval = setInterval(() => {
     const current = Date.now();
