@@ -447,18 +447,32 @@ async function onScreenshotUploaded(event: Event) {
 
     if (gameChannels.size > 0) {
       const allNumbers = [...gameChannels].sort((a, b) => a - b);
-      let filteredNumbers = allNumbers;
+      let filteredNumbers = [...allNumbers];
 
-      // 智能噪点过滤：在 MapleStory 频道列表中，一页显示的所有频道号跨度通常在 300 以内
-      // 如果识别出的列表中有极个别离群噪点（如误将人数 3/25 读成 55788 或 5），使用中位数 300 范围自动剔除
-      if (allNumbers.length >= 4) {
-        const mid = Math.floor(allNumbers.length / 2);
-        const median = allNumbers[mid];
-        const validRange = allNumbers.filter(num => Math.abs(num - median) <= 300);
-        if (validRange.length > 0) {
-          filteredNumbers = validRange;
+      // 核心算法：一张截图最多显示 25 个频道，因此合法频段一定紧密贴合中位数。
+      // 自动循环剥离头部与尾部与中位数偏离离谱的数字（如误将人数 3/25 误读成 55788 或 5/7）
+      while (filteredNumbers.length > 1) {
+        const mid = Math.floor(filteredNumbers.length / 2);
+        const median = filteredNumbers[mid];
+        
+        const headDiff = median - filteredNumbers[0];
+        const tailDiff = filteredNumbers[filteredNumbers.length - 1] - median;
+        
+        // 单张截图最多 25 个频道，一页内频道的合理跨度绝不会超过 200
+        if (headDiff > 200 || tailDiff > 200) {
+          if (headDiff >= tailDiff && headDiff > 200) {
+            filteredNumbers.shift(); // 自动忽略头部离谱数字 (例如 CH.5, CH.7)
+          } else if (tailDiff > 200) {
+            filteredNumbers.pop(); // 自动忽略尾部离谱数字 (例如 CH.55788, CH.36725)
+          } else {
+            break;
+          }
+        } else {
+          break; // 头尾均处于合理区间
         }
       }
+
+      if (filteredNumbers.length === 0) filteredNumbers = allNumbers;
 
       const start = filteredNumbers[0];
       const end = filteredNumbers[filteredNumbers.length - 1];
