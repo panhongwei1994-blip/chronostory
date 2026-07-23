@@ -359,33 +359,29 @@ async function onScreenshotUploaded(event: Event) {
     });
 
     const tmpCanvas = document.createElement('canvas');
-    // 放大 3 倍提升 OCR 精度
-    const scale = 3;
+    // 放大 2.5 倍并保持平滑，让 Tesseract 更容易识别像素字体
+    const scale = 2.5;
     tmpCanvas.width = img.width * scale;
-    tmpCanvas.height = img.height * scale;
+    // 高度乘以 2，用于容纳【正常图】和【反色图】
+    tmpCanvas.height = img.height * scale * 2;
     const ctx = tmpCanvas.getContext('2d');
     if (!ctx) { screenshotOcrStatus.value = '⚠️ Canvas 初始化失败'; return; }
 
-    // 高对比度 + 去色处理
-    ctx.imageSmoothingEnabled = false;
-    ctx.filter = 'contrast(1.8) brightness(1.1) saturate(0)';
-    ctx.drawImage(img, 0, 0, tmpCanvas.width, tmpCanvas.height);
+    ctx.imageSmoothingEnabled = true;
+
+    // 绘制上半部分：黑白高对比度 (捕获白底黑字的频道)
+    ctx.filter = 'grayscale(100%) contrast(180%)';
+    ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
+
+    // 绘制下半部分：反相黑白高对比度 (捕获深底白字的频道，例如红色或深灰色的当前/高亮频道)
+    ctx.filter = 'grayscale(100%) invert(100%) contrast(180%)';
+    ctx.drawImage(img, 0, img.height * scale, img.width * scale, img.height * scale);
     ctx.filter = 'none';
-    URL.revokeObjectURL(url);
 
-    // 二值化：让 CH.XXXX 文字变成纯黑，背景变纯白
-    const imgData = ctx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
-    for (let i = 0; i < imgData.data.length; i += 4) {
-      const brightness = (imgData.data[i] + imgData.data[i + 1] + imgData.data[i + 2]) / 3;
-      const v = brightness < 140 ? 0 : 255;
-      imgData.data[i] = v;
-      imgData.data[i + 1] = v;
-      imgData.data[i + 2] = v;
-      imgData.data[i + 3] = 255;
-    }
-    ctx.putImageData(imgData, 0, 0);
+    // 转为 Blob url 提供给 Tesseract
+    const combinedImgUrl = tmpCanvas.toDataURL('image/jpeg');
 
-    screenshotOcrStatus.value = '🔍 图片预处理完成，正在 OCR 识别文字...';
+    screenshotOcrStatus.value = '🔍 图像双重极性增强完毕，正在进行 AI 并行识别...';
 
     // @ts-ignore
     const TesseractLib = window.Tesseract;
@@ -405,8 +401,8 @@ async function onScreenshotUploaded(event: Event) {
     const rawText = ret.data.text || '';
     screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300)}"`;
 
-    // 提取 CH.XXXX 频道号
-    const regex = /CH[.\s_-]*(\d{1,5})/gi;
+    // 提取频道号。因为加了白名单，可能出现 "C H" 等轻微形变
+    const regex = /C\s*[Hh][.\s_-]*(\d{1,5})/gi;
     const matches = [...rawText.matchAll(regex)];
     const gameChannels = new Set<number>();
 
