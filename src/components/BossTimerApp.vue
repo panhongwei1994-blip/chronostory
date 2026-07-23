@@ -672,17 +672,8 @@ function submitNewChannel() {
   const ch = newChannelNum.value;
   const mins = customMinutes.value && customMinutes.value > 0 ? customMinutes.value : currentBossMinutes.value;
 
-  // 允许提交任何频道号：若在已知范围之外，自动扩展起止边界
-  if (ch < matrixStartCh.value) {
-    matrixStartCh.value = ch;
-    saveChannelRange();
-  }
-  if (ch > matrixEndCh.value) {
-    matrixEndCh.value = ch;
-    saveChannelRange();
-  }
-
-  // 若该频道曾被右键删除/隐藏，自动恢复呈现
+  // 保持系统识别的频道范围 (matrixStartCh ~ matrixEndCh) 绝对不变
+  // 若该频道在当前范围之内且曾被隐藏，自动解除隐藏
   if (hiddenChannels.value.includes(ch)) {
     hiddenChannels.value = hiddenChannels.value.filter(c => c !== ch);
     saveHiddenChannels();
