@@ -84,6 +84,23 @@
           />
         </div>
 
+        <!-- 快速筛选：输入存在的频道，自动删除其他 -->
+        <div style="display:flex; align-items:center; gap:6px; background:rgba(0,0,0,0.4); padding:3px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.15);">
+          <span style="font-size:10px; color:#fbbf24; font-weight:700; white-space:nowrap;">⚡筛选:</span>
+          <input
+            type="text"
+            v-model="quickFilterInput"
+            style="flex:1; min-width:120px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); color:#fff; font-weight:700; border-radius:4px; font-size:11px; padding:3px 6px;"
+            placeholder="输入存在频道 如: 2,5,7,9,25-30,44"
+          />
+          <button
+            style="font-size:10px; background:rgba(245,158,11,0.5); color:#fef3c7; border:1px solid rgba(252,211,77,0.5); border-radius:4px; padding:3px 8px; cursor:pointer; font-weight:800; white-space:nowrap;"
+            @click="applyQuickFilter"
+          >
+            确认筛选
+          </button>
+        </div>
+
         <button
           v-if="hiddenChannels.length > 0"
           style="font-size:10px; background:rgba(239,68,68,0.3); color:#fca5a5; border:1px solid rgba(239,68,68,0.5); border-radius:4px; padding:2px 8px; cursor:pointer; font-weight:700;"
@@ -316,6 +333,70 @@ type OcrMode = 'current-tile' | 'channel-tile' | 'channel-panel' | 'full';
 type OcrCrop = { x: number; y: number; width: number; height: number };
 
 const teamChannels = ref<TeamChannelItem[]>([]);
+
+// 快速筛选输入
+const quickFilterInput = ref<string>('');
+
+// 解析快速筛选输入：支持 "2,5,7,9,25-30,44" 格式
+function parseQuickFilter(input: string): number[] {
+  const result = new Set<number>();
+  const parts = input.replace(/\s+/g, '').split(',');
+  for (const part of parts) {
+    if (!part) continue;
+    const rangeParts = part.split('-');
+    if (rangeParts.length === 2) {
+      const a = parseInt(rangeParts[0], 10);
+      const b = parseInt(rangeParts[1], 10);
+      if (!isNaN(a) && !isNaN(b)) {
+        for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+          result.add(i);
+        }
+      }
+    } else {
+      const n = parseInt(part, 10);
+      if (!isNaN(n)) result.add(n);
+    }
+  }
+  return [...result];
+}
+
+function applyQuickFilter() {
+  const input = quickFilterInput.value.trim();
+  if (!input) {
+    triggerToast('请先输入存在的频道号');
+    return;
+  }
+
+  const existingChannels = new Set(parseQuickFilter(input));
+  if (existingChannels.size === 0) {
+    triggerToast('未能解析出频道号，请用逗号分隔，如: 2,5,7,25-30');
+    return;
+  }
+
+  const start = Math.max(1, matrixStartCh.value || 1);
+  const end = Math.max(start, matrixEndCh.value || start);
+
+  let removedCount = 0;
+  for (let c = start; c <= end; c++) {
+    if (!existingChannels.has(c) && !hiddenChannels.value.includes(c)) {
+      hiddenChannels.value.push(c);
+      removedCount++;
+    }
+  }
+
+  // 把筛选中存在但之前被隐藏的频道恢复
+  let restoredCount = 0;
+  hiddenChannels.value = hiddenChannels.value.filter((ch) => {
+    if (existingChannels.has(ch)) {
+      restoredCount++;
+      return false;
+    }
+    return true;
+  });
+
+  saveHiddenChannels();
+  triggerToast(`✅ 保留 ${existingChannels.size} 个频道，删除 ${removedCount} 个，恢复 ${restoredCount} 个`);
+}
 
 // 已删除抹去的频道黑名单
 const hiddenChannels = ref<number[]>([]);
