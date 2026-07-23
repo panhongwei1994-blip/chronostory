@@ -108,15 +108,6 @@
             🔄 恢复已删 {{ hiddenChannels.length }} 频道
           </button>
         </div>
-        <div style="margin-top:4px; font-size:11px; color:#fbbf24; word-break:break-all;">
-          {{ screenshotOcrStatus }}
-        </div>
-        
-        <!-- OCR 调试视窗 -->
-        <div v-if="ocrDebugImage" style="margin-top: 10px; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-          <p style="font-size: 11px; color: #94a3b8; margin: 0 0 6px 0;">🔍 AI 视觉预处理结果 (用于分析遗漏原因):</p>
-          <img :src="ocrDebugImage" style="max-width: 100%; border-radius: 4px; image-rendering: pixelated;" />
-        </div>
       </div>
 
       <!-- 动态自适应网格矩阵 (左键一键报时，右键一键删除频道) -->
