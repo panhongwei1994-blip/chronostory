@@ -87,6 +87,7 @@
         <!-- 截图上传识别 -->
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
           <button
+            v-if="!isOcrLoading"
             class="monitor-action-btn monitor-btn-amber"
             style="height:28px; font-size:11px; padding:0 10px;"
             @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
@@ -94,7 +95,7 @@
             📸 上传截图识别频道
           </button>
 
-          <span v-if="isOcrLoading" style="font-size:11px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
+          <span v-else style="font-size:11px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
             ⏳ 正在读取频道画面，请稍候...
           </span>
 
