@@ -366,60 +366,31 @@ async function onScreenshotUploaded(event: Event) {
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = () => reject(new Error('图片加载失败'));
-      img.src = url;
-    });
-
-    const canvas1x = document.createElement('canvas');
-    canvas1x.width = img.width;
-    canvas1x.height = img.height;
-    const ctx1x = canvas1x.getContext('2d');
-    if (!ctx1x) return;
-    ctx1x.drawImage(img, 0, 0);
-
-    // 终极黑科技：1x 原生像素级颜色提纯。
-    // MapleStory 是像素游戏，字体边缘没有抗锯齿。我们在 1x 尺寸下直接把真正的文字像素抓出来。
-    const imgData = ctx1x.getImageData(0, 0, img.width, img.height);
-    for (let i = 0; i < imgData.data.length; i += 4) {
-      const r = imgData.data[i];
-      const g = imgData.data[i+1];
-      const b = imgData.data[i+2];
-
-      // 黑字判断：RGB都很低
-      const isBlackText = r < 100 && g < 100 && b < 100;
-      // 白字判断：RGB都很高 (严格一点，避免把浅灰背景当成白字)
-      const isWhiteText = r > 240 && g > 240 && b > 240;
-
-      if (isBlackText || isWhiteText) {
-        // 提取文字，涂成纯黑
-        imgData.data[i] = 0;
-        imgData.data[i+1] = 0;
-        imgData.data[i+2] = 0;
-      } else {
-        // 其他所有东西（浅灰背景、深灰背景、红背景、彩色进度条、粉色三角箭头）全部涂成纯白！
-        imgData.data[i] = 255;
-        imgData.data[i+1] = 255;
-        imgData.data[i+2] = 255;
-      }
-      imgData.data[i+3] = 255;
-    }
-    ctx1x.putImageData(imgData, 0, 0);
-
-    // 提纯后，放大 3 倍并使用平滑算法，让 Tesseract 看到丝滑的黑底白字
+    // 回归最本质的无损图像处理，丢弃破坏性的阈值过滤
     const tmpCanvas = document.createElement('canvas');
     const scale = 3;
     tmpCanvas.width = img.width * scale;
-    tmpCanvas.height = img.height * scale;
+    tmpCanvas.height = img.height * scale * 2;
     const ctx = tmpCanvas.getContext('2d');
     if (!ctx) return;
+    
+    // 关键：保留抗锯齿，这对 Tesseract 识别字体至关重要
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(canvas1x, 0, 0, tmpCanvas.width, tmpCanvas.height);
 
-    // 暴露预处理图像供调试
+    // 上半区：纯净灰度图（完美保留黑字，如 CH.1393）
+    ctx.filter = 'grayscale(100%)';
+    ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
+
+    // 下半区：反相灰度图（完美保留白字，如蓝色的 CH.1542 和红色的 CH.1557）
+    ctx.filter = 'grayscale(100%) invert(100%)';
+    ctx.drawImage(img, 0, img.height * scale, img.width * scale, img.height * scale);
+    ctx.filter = 'none';
+
+    // 暴露给调试 UI
     const combinedImgUrl = tmpCanvas.toDataURL('image/jpeg');
-    // 把图片存到一个全局可见的 ref，如果后续识别出问题，用户可以直接看到 AI 的“眼睛”看到了什么
     window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: combinedImgUrl }));
 
-    screenshotOcrStatus.value = '🔍 像素级去噪完毕，正在进行 AI 深度识别...';
+    screenshotOcrStatus.value = '🔍 无损灰度映射完成，正在使用稀疏矩阵 AI 引擎识别...';
 
     // @ts-ignore
     const TesseractLib = window.Tesseract;
@@ -430,7 +401,9 @@ async function onScreenshotUploaded(event: Event) {
 
     const worker = await TesseractLib.createWorker('eng');
     await worker.setParameters({
-      // 放开白名单，使用 PSM 11 (Sparse text) 避免跨列粘连
+      // 必须有白名单，防止进度条干扰
+      tessedit_char_whitelist: 'CHch.0123456789/<>: ',
+      // PSM 11 极其重要：稀疏文本。它把每个格子当成独立单词，彻底解决 CH.36 和 13/25 粘连的问题
       tessedit_pageseg_mode: '11',
     });
     const ret = await worker.recognize(tmpCanvas);
@@ -439,30 +412,37 @@ async function onScreenshotUploaded(event: Event) {
     const rawText = ret.data.text || '';
     screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300).replace(/\\n/g, ' ')}"`;
 
-    // 提取频道号
-    const regex = /(?:[Cc<>]?\s*[Hh])[.\s_-]*(\d{1,5})/gi;
+    // 提取频道号：兼容 ▶ 被识别为 < 或丢弃 C 的情况
+    const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
     const matches = [...rawText.matchAll(regex)];
     const gameChannels = new Set<number>();
     
-    const start = matrixStartCh.value || 1;
-    const end = matrixEndCh.value || 400;
-
     matches.forEach((m) => {
-      let str = m[1];
-      while (str.length > 0) {
-        const val = parseInt(str, 10);
-        if (val >= start && val <= end) {
-          gameChannels.add(val);
-          break;
-        }
-        str = str.substring(0, str.length - 1);
+      const val = parseInt(m[1], 10);
+      if (!isNaN(val) && val >= 1 && val <= 99999) {
+        gameChannels.add(val);
       }
     });
 
     if (gameChannels.size > 0) {
-      const validChannels = [...gameChannels].sort((a, b) => a - b);
+      let start = matrixStartCh.value || 1;
+      let end = matrixEndCh.value || 400;
 
-      if (validChannels.length === 0) {
+      let validChannels = [...gameChannels].filter(c => c >= start && c <= end).sort((a, b) => a - b);
+
+      // 智能感知升级：如果用户换了一个完全不同频段的区服（比如截图里的 1393~1576）
+      if (validChannels.length === 0 && gameChannels.size > 0) {
+        const sortedAll = [...gameChannels].sort((a, b) => a - b);
+        // 自动修正频道矩阵范围
+        matrixStartCh.value = sortedAll[0];
+        matrixEndCh.value = sortedAll[sortedAll.length - 1];
+        saveChannelRange();
+        
+        start = matrixStartCh.value;
+        end = matrixEndCh.value;
+        validChannels = sortedAll;
+        screenshotOcrStatus.value = `🤖 AI 检测到你换区了！已自动将频道矩阵调整为 CH.${start}~CH.${end}。`;
+      } else if (validChannels.length === 0) {
         screenshotOcrStatus.value = `⚠️ 识别到的频道均不在当前范围 (${start}~${end}) 内。`;
         return;
       }
@@ -479,8 +459,8 @@ async function onScreenshotUploaded(event: Event) {
       }
       saveHiddenChannels();
 
-      screenshotOcrStatus.value = `🎉 识别到 ${validChannels.length} 个范围内的频道，已自动删除 ${removedCount} 个不存在的频道！识别到: ${validChannels.map(c => 'CH.' + c).join(', ')}`;
-      triggerToast(`✅ 识别 ${validChannels.length} 个频道，删除 ${removedCount} 个`);
+      screenshotOcrStatus.value = `🎉 识别到 ${validChannels.length} 个频道，已自动清理 ${removedCount} 个无效频道！识别到: ${validChannels.map(c => 'CH.' + c).join(', ')}`;
+      triggerToast(`✅ 识别 ${validChannels.length} 个频道，清理 ${removedCount} 个`);
     } else {
       screenshotOcrStatus.value = `⚠️ 未识别到频道号。OCR原文: "${rawText.substring(0, 200)}"。请截取完整的 CHANGE CHANNEL 弹窗。`;
     }
