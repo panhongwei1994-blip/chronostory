@@ -26,8 +26,14 @@
         </button>
       </div>
 
-      <div class="reset-timer-info">
-        <span class="reset-time-badge">01:00 重置: {{ resetCountDownText }}</span>
+      <div class="cmd-copy-bar">
+        <button
+          @click="copyCommand('/bossrespawn')"
+          style="height:28px; font-size:11px; padding:0 10px; background:linear-gradient(135deg, #3b82f6, #1d4ed8); color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"
+          title="点击一键复制指令，在游戏聊天框输入查看Boss刷新剩余时间"
+        >
+          📋 <span style="font-family:monospace; font-weight:900; letter-spacing:0.5px;">/bossrespawn</span> <span style="opacity:0.8; font-size:10px;">(一键复制)</span>
+        </button>
       </div>
     </div>
 
@@ -579,6 +585,18 @@ function cancelChMatrix(chNum: number) {
   }
   saveLocalChannels();
   triggerToast(`CH ${chNum} 已删除`);
+}
+
+function copyCommand(cmd: string) {
+  if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cmd).then(() => {
+      triggerToast(`📋 已复制指令 ${cmd} 到剪贴板！`);
+    }).catch(() => {
+      triggerToast(`📋 指令: ${cmd}`);
+    });
+  } else {
+    triggerToast(`📋 指令: ${cmd}`);
+  }
 }
 
 const currentBossName = computed(() => {
