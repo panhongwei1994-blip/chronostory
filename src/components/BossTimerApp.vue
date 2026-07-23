@@ -88,9 +88,26 @@
             placeholder="130"
             @change="saveChannelRange"
           />
-        </div>
+        <!-- 📸 上传截图识别频道按钮 -->
+        <button
+          class="monitor-action-btn monitor-btn-amber"
+          style="height:26px; font-size:11px; padding:0 10px; background:linear-gradient(135deg, #f59e0b, #d97706); color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:4px; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+          @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
+        >
+          📸 上传截图识别频道
+        </button>
 
+        <span v-if="isOcrLoading" style="font-size:11px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
+          ⏳ 正在读取频道画面，请稍候...
+        </span>
 
+        <input
+          ref="channelScreenshotInput"
+          type="file"
+          accept="image/*"
+          style="display:none;"
+          @change="onScreenshotUploaded"
+        />
       </div>
 
       <!-- 动态自适应网格矩阵 (左键一键报时，右键一键删除频道) -->
