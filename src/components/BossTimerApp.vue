@@ -392,7 +392,8 @@ async function onScreenshotUploaded(event: Event) {
 
     const worker = await TesseractLib.createWorker('eng');
     await worker.setParameters({
-      tessedit_char_whitelist: 'CHch.0123456789 ',
+      // 加入斜杠和大于小于号，防止 Tesseract 为了强行匹配把 25/25 连到频道号上，同时兼容三角形被识别为 < 或 >
+      tessedit_char_whitelist: 'CHch.0123456789/<>: ',
       tessedit_pageseg_mode: '6',
     });
     const ret = await worker.recognize(tmpCanvas);
@@ -401,42 +402,45 @@ async function onScreenshotUploaded(event: Event) {
     const rawText = ret.data.text || '';
     screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300)}"`;
 
-    // 提取频道号。因为加了白名单，可能出现 "C H" 等轻微形变
-    const regex = /C\s*[Hh][.\s_-]*(\d{1,5})/gi;
+    // 提取频道号：放宽 C 的限制，因为高亮频道的 ▶ 箭头可能会和 C 粘连导致 C 无法识别，变成 H.16 或 <H.16
+    const regex = /(?:[Cc<>]?\s*[Hh])[.\s_-]*(\d{1,3})/gi;
     const matches = [...rawText.matchAll(regex)];
     const gameChannels = new Set<number>();
 
     matches.forEach((m) => {
       const num = parseInt(m[1], 10);
-      if (!isNaN(num) && num >= 1 && num <= 99999) {
+      if (!isNaN(num) && num >= 1 && num <= 999) {
         gameChannels.add(num);
       }
     });
 
     if (gameChannels.size > 0) {
-      const sorted = [...gameChannels].sort((a, b) => a - b);
+      const start = matrixStartCh.value || 1;
+      const end = matrixEndCh.value || 400;
 
-      // 自动更新频道范围为识别到的最小~最大
-      matrixStartCh.value = sorted[0];
-      matrixEndCh.value = sorted[sorted.length - 1];
-      saveChannelRange();
+      const validChannels = [...gameChannels]
+        .filter(c => c >= start && c <= end)
+        .sort((a, b) => a - b);
+
+      if (validChannels.length === 0) {
+        screenshotOcrStatus.value = `⚠️ 识别到的频道均不在当前范围 (${start}~${end}) 内。`;
+        return;
+      }
 
       // 在范围内，删除不存在的频道
-      const start = sorted[0];
-      const end = sorted[sorted.length - 1];
       let removedCount = 0;
       // 先清除范围内旧的隐藏记录
       hiddenChannels.value = hiddenChannels.value.filter(ch => ch < start || ch > end);
       for (let c = start; c <= end; c++) {
-        if (!gameChannels.has(c)) {
+        if (!validChannels.includes(c)) {
           hiddenChannels.value.push(c);
           removedCount++;
         }
       }
       saveHiddenChannels();
 
-      screenshotOcrStatus.value = `🎉 识别到 ${gameChannels.size} 个频道 (CH${start}~CH${end})，已自动删除 ${removedCount} 个不存在的频道！识别到: ${sorted.map(c => 'CH.' + c).join(', ')}`;
-      triggerToast(`✅ 识别 ${gameChannels.size} 个频道，删除 ${removedCount} 个`);
+      screenshotOcrStatus.value = `🎉 识别到 ${validChannels.length} 个范围内的频道，已自动删除 ${removedCount} 个不存在的频道！识别到: ${validChannels.map(c => 'CH.' + c).join(', ')}`;
+      triggerToast(`✅ 识别 ${validChannels.length} 个频道，删除 ${removedCount} 个`);
     } else {
       screenshotOcrStatus.value = `⚠️ 未识别到频道号。OCR原文: "${rawText.substring(0, 200)}"。请截取完整的 CHANGE CHANNEL 弹窗。`;
     }
