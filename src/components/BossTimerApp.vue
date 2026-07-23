@@ -629,14 +629,7 @@ function selectServer(server: ServerRegion) {
   triggerToast(`已切换服务器为【${label}】`);
 }
 
-function saveChannelRange() {
-  try {
-    localStorage.setItem(`maple_ch_range_${activeServer.value}`, JSON.stringify({
-      start: matrixStartCh.value,
-      end: matrixEndCh.value
-    }));
-  } catch (e) {}
-}
+
 
 function loadChannelRange() {
   try {
