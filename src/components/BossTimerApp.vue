@@ -366,6 +366,9 @@ async function onScreenshotUploaded(event: Event) {
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = () => reject(new Error('图片加载失败'));
+      img.src = url;
+    });
+
     // 回归最本质的无损图像处理，丢弃破坏性的阈值过滤
     const tmpCanvas = document.createElement('canvas');
     const scale = 3;
