@@ -84,13 +84,33 @@
           />
         </div>
 
-        <button
-          v-if="hiddenChannels.length > 0"
-          style="font-size:10px; background:rgba(239,68,68,0.3); color:#fca5a5; border:1px solid rgba(239,68,68,0.5); border-radius:4px; padding:2px 8px; cursor:pointer; font-weight:700;"
-          @click="resetHiddenChannels"
-        >
-          🔄 恢复已删 {{ hiddenChannels.length }} 频道
-        </button>
+        <!-- 截图上传识别 + 恢复 -->
+        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+          <button
+            class="monitor-action-btn monitor-btn-amber"
+            style="height:28px; font-size:11px; padding:0 10px;"
+            @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
+          >
+            📸 上传截图识别频道
+          </button>
+          <input
+            ref="channelScreenshotInput"
+            type="file"
+            accept="image/*"
+            style="display:none;"
+            @change="onScreenshotUploaded"
+          />
+          <button
+            v-if="hiddenChannels.length > 0"
+            style="height:28px; font-size:10px; background:rgba(239,68,68,0.3); color:#fca5a5; border:1px solid rgba(239,68,68,0.5); border-radius:4px; padding:0 8px; cursor:pointer; font-weight:700;"
+            @click="resetHiddenChannels"
+          >
+            🔄 恢复已删 {{ hiddenChannels.length }} 频道
+          </button>
+        </div>
+        <div v-if="screenshotOcrStatus" style="font-size:11px; color:#94a3b8; margin-top:4px; padding:4px 8px; background:rgba(0,0,0,0.3); border-radius:4px; word-break:break-all;">
+          {{ screenshotOcrStatus }}
+        </div>
       </div>
 
       <!-- 动态自适应网格矩阵 (左键一键报时，右键一键删除频道) -->
@@ -294,6 +314,123 @@ const showMonitorPanel = ref<boolean>(false);
 // 频道范围 (例如 100 至 130)
 const matrixStartCh = ref<number>(100);
 const matrixEndCh = ref<number>(130);
+
+// 📸 截图识别状态
+const screenshotOcrStatus = ref<string>('');
+const channelScreenshotInput = ref<HTMLInputElement | null>(null);
+
+// 截图上传识别频道：用户截图换线弹窗 → OCR 识别 → 自动删除不存在频道
+async function onScreenshotUploaded(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  screenshotOcrStatus.value = '⏳ 正在加载图片并识别频道号...';
+
+  try {
+    // 把图片画到一个临时 canvas 上
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('图片加载失败'));
+      img.src = url;
+    });
+
+    const tmpCanvas = document.createElement('canvas');
+    // 放大 3 倍提升 OCR 精度
+    const scale = 3;
+    tmpCanvas.width = img.width * scale;
+    tmpCanvas.height = img.height * scale;
+    const ctx = tmpCanvas.getContext('2d');
+    if (!ctx) { screenshotOcrStatus.value = '⚠️ Canvas 初始化失败'; return; }
+
+    // 高对比度 + 去色处理
+    ctx.imageSmoothingEnabled = false;
+    ctx.filter = 'contrast(1.8) brightness(1.1) saturate(0)';
+    ctx.drawImage(img, 0, 0, tmpCanvas.width, tmpCanvas.height);
+    ctx.filter = 'none';
+    URL.revokeObjectURL(url);
+
+    // 二值化：让 CH.XXXX 文字变成纯黑，背景变纯白
+    const imgData = ctx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      const brightness = (imgData.data[i] + imgData.data[i + 1] + imgData.data[i + 2]) / 3;
+      const v = brightness < 140 ? 0 : 255;
+      imgData.data[i] = v;
+      imgData.data[i + 1] = v;
+      imgData.data[i + 2] = v;
+      imgData.data[i + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    screenshotOcrStatus.value = '🔍 图片预处理完成，正在 OCR 识别文字...';
+
+    // @ts-ignore
+    const TesseractLib = window.Tesseract;
+    if (!TesseractLib) {
+      screenshotOcrStatus.value = '⚠️ Tesseract OCR 引擎未加载，请刷新页面';
+      return;
+    }
+
+    const worker = await TesseractLib.createWorker('eng');
+    await worker.setParameters({
+      tessedit_char_whitelist: 'CHch.0123456789 ',
+      tessedit_pageseg_mode: '6',
+    });
+    const ret = await worker.recognize(tmpCanvas);
+    await worker.terminate();
+
+    const rawText = ret.data.text || '';
+    screenshotOcrStatus.value = `OCR 原文: "${rawText.substring(0, 300)}"`;
+
+    // 提取 CH.XXXX 频道号
+    const regex = /CH[.\s_-]*(\d{1,5})/gi;
+    const matches = [...rawText.matchAll(regex)];
+    const gameChannels = new Set<number>();
+
+    matches.forEach((m) => {
+      const num = parseInt(m[1], 10);
+      if (!isNaN(num) && num >= 1 && num <= 99999) {
+        gameChannels.add(num);
+      }
+    });
+
+    if (gameChannels.size > 0) {
+      const sorted = [...gameChannels].sort((a, b) => a - b);
+
+      // 自动更新频道范围为识别到的最小~最大
+      matrixStartCh.value = sorted[0];
+      matrixEndCh.value = sorted[sorted.length - 1];
+      saveChannelRange();
+
+      // 在范围内，删除不存在的频道
+      const start = sorted[0];
+      const end = sorted[sorted.length - 1];
+      let removedCount = 0;
+      // 先清除范围内旧的隐藏记录
+      hiddenChannels.value = hiddenChannels.value.filter(ch => ch < start || ch > end);
+      for (let c = start; c <= end; c++) {
+        if (!gameChannels.has(c)) {
+          hiddenChannels.value.push(c);
+          removedCount++;
+        }
+      }
+      saveHiddenChannels();
+
+      screenshotOcrStatus.value = `🎉 识别到 ${gameChannels.size} 个频道 (CH${start}~CH${end})，已自动删除 ${removedCount} 个不存在的频道！识别到: ${sorted.map(c => 'CH.' + c).join(', ')}`;
+      triggerToast(`✅ 识别 ${gameChannels.size} 个频道，删除 ${removedCount} 个`);
+    } else {
+      screenshotOcrStatus.value = `⚠️ 未识别到频道号。OCR原文: "${rawText.substring(0, 200)}"。请截取完整的 CHANGE CHANNEL 弹窗。`;
+    }
+  } catch (e: any) {
+    screenshotOcrStatus.value = `⚠️ 识别失败: ${e?.message || '未知错误'}`;
+  }
+
+  // 清空 input 以便可以重复上传同一张图
+  if (input) input.value = '';
+}
 
 // 🎥 AI 画面监控核心状态
 const videoRef = ref<HTMLVideoElement | null>(null);
