@@ -88,19 +88,11 @@
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
           <button
             class="monitor-action-btn monitor-btn-amber"
-            style="height:32px; font-size:12px; padding:0 12px; display:flex; align-items:center; gap:6px;"
-            :disabled="isOcrLoading"
+            style="height:28px; font-size:11px; padding:0 10px;"
             @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
           >
-            <span v-if="isOcrLoading" style="display:inline-block; animation: spin 1s linear infinite;">⏳</span>
-            <span v-else>📸</span>
-            <span>{{ isOcrLoading ? 'AI 识别分析中...' : '上传截图识别频道' }}</span>
+            📸 上传截图识别频道
           </button>
-
-          <div v-if="isOcrLoading" style="font-size:12px; color:#fbbf24; display:flex; align-items:center; gap:6px; font-weight:600;">
-            <span>正在读取频道画面，请稍候...</span>
-          </div>
-
           <input
             ref="channelScreenshotInput"
             type="file"
