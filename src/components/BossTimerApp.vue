@@ -379,17 +379,21 @@ async function onScreenshotUploaded(event: Event) {
     const ctx1 = canvasNormal.getContext('2d');
     if (ctx1) {
       ctx1.imageSmoothingEnabled = true;
-      ctx1.filter = 'grayscale(100%) contrast(120%)';
+      // 提升 150% 亮度，把浅灰色背景直接推到纯白，黑字 (0) 保持纯黑。
+      ctx1.filter = 'grayscale(100%) brightness(150%) contrast(150%)';
       ctx1.drawImage(img, 0, 0, w, h);
     }
 
-    // 图像 2：反相灰度（用于捕获深色/高亮背景的频道，如 CH.9, CH.16）
+    // 图像 2：反相灰度（用于捕获深色/高亮背景的频道，如 CH.9, CH.12, CH.16, CH.28）
     const canvasInvert = document.createElement('canvas');
     canvasInvert.width = w; canvasInvert.height = h;
     const ctx2 = canvasInvert.getContext('2d');
     if (ctx2) {
       ctx2.imageSmoothingEnabled = true;
-      ctx2.filter = 'grayscale(100%) invert(100%) contrast(120%)';
+      // 黑科技核心：CH.9 的深灰色背景反相后，会变成偏暗的灰色 (比如 105)。
+      // 如果直接交给 Tesseract，Otsu 全局阈值会把它和文字 (0) 一起判定为黑色，导致画面丢失。
+      // 因此必须先用 brightness(200%) 将它推过 128 中值，再用 contrast 将其彻底变白！文字因为是 0，乘法后依然是 0。
+      ctx2.filter = 'grayscale(100%) invert(100%) brightness(200%) contrast(150%)';
       ctx2.drawImage(img, 0, 0, w, h);
     }
 
