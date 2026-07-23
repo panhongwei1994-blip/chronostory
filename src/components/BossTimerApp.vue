@@ -613,10 +613,7 @@ const activeCountingChannels = computed(() => {
     .sort((a, b) => a.remainingSec - b.remainingSec);
 });
 
-    }
-  }
-  return list;
-});
+
 
 function selectBoss(bossId: string) {
   globalBossId.value = bossId;
