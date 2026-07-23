@@ -373,31 +373,29 @@ async function onScreenshotUploaded(event: Event) {
     const w = img.width * scale;
     const h = img.height * scale;
 
-    // 图像 1：正常灰度（用于捕获浅色背景的频道，如 CH.2, CH.5）
+    // 图像 1：正常灰度（捕获浅色背景频道）
+    // 仅使用 120% 亮度温和提亮浅灰背景，坚决不使用 contrast 以免破坏字体抗锯齿边缘
     const canvasNormal = document.createElement('canvas');
     canvasNormal.width = w; canvasNormal.height = h;
     const ctx1 = canvasNormal.getContext('2d');
     if (ctx1) {
       ctx1.imageSmoothingEnabled = true;
-      // 提升 150% 亮度，把浅灰色背景直接推到纯白，黑字 (0) 保持纯黑。
-      ctx1.filter = 'grayscale(100%) brightness(150%) contrast(150%)';
+      ctx1.filter = 'grayscale(100%) brightness(120%)';
       ctx1.drawImage(img, 0, 0, w, h);
     }
 
-    // 图像 2：反相灰度（用于捕获深色/高亮背景的频道，如 CH.9, CH.12, CH.16, CH.28）
+    // 图像 2：反相灰度（捕获深色/高亮背景频道）
+    // 使用 150% 亮度将深灰反相后的中度灰提亮为浅灰/白，同时坚决不使用 contrast 保护字体圆润度
     const canvasInvert = document.createElement('canvas');
     canvasInvert.width = w; canvasInvert.height = h;
     const ctx2 = canvasInvert.getContext('2d');
     if (ctx2) {
       ctx2.imageSmoothingEnabled = true;
-      // 黑科技核心：CH.9 的深灰色背景反相后，会变成偏暗的灰色 (比如 105)。
-      // 如果直接交给 Tesseract，Otsu 全局阈值会把它和文字 (0) 一起判定为黑色，导致画面丢失。
-      // 因此必须先用 brightness(200%) 将它推过 128 中值，再用 contrast 将其彻底变白！文字因为是 0，乘法后依然是 0。
-      ctx2.filter = 'grayscale(100%) invert(100%) brightness(200%) contrast(150%)';
+      ctx2.filter = 'grayscale(100%) invert(100%) brightness(150%)';
       ctx2.drawImage(img, 0, 0, w, h);
     }
 
-    // 更新调试图像（展示拼接效果供人工查看）
+    // 更新调试图像
     const debugCanvas = document.createElement('canvas');
     debugCanvas.width = w; debugCanvas.height = h * 2;
     const debugCtx = debugCanvas.getContext('2d');
@@ -407,7 +405,7 @@ async function onScreenshotUploaded(event: Event) {
       window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: debugCanvas.toDataURL('image/jpeg') }));
     }
 
-    screenshotOcrStatus.value = '🔍 已生成多重曝光视图，正在启动 AI 引擎分离识别...';
+    screenshotOcrStatus.value = '🔍 已生成多曝光平滑视图，启动 AI 引擎双线识别...';
 
     // @ts-ignore
     const TesseractLib = window.Tesseract;
@@ -431,7 +429,7 @@ async function onScreenshotUploaded(event: Event) {
     await worker.terminate();
 
     const rawText = ret1.data.text + ' \\n ' + ret2.data.text;
-    screenshotOcrStatus.value = `OCR 原文合并: "${rawText.substring(0, 200).replace(/\\n/g, ' ')}"`;
+    screenshotOcrStatus.value = `OCR 原始扫描完成，正在解析数据...`;
 
     // 提取频道号
     const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
@@ -449,19 +447,29 @@ async function onScreenshotUploaded(event: Event) {
       let start = matrixStartCh.value || 1;
       let end = matrixEndCh.value || 400;
 
-      let validChannels = [...gameChannels].filter(c => c >= start && c <= end).sort((a, b) => a - b);
+      const minDet = Math.min(...gameChannels);
+      const maxDet = Math.max(...gameChannels);
 
-      if (validChannels.length === 0 && gameChannels.size > 0) {
-        const sortedAll = [...gameChannels].sort((a, b) => a - b);
-        matrixStartCh.value = sortedAll[0];
-        matrixEndCh.value = sortedAll[sortedAll.length - 1];
-        saveChannelRange();
-        
-        start = matrixStartCh.value;
-        end = matrixEndCh.value;
-        validChannels = sortedAll;
-        screenshotOcrStatus.value = `🤖 AI 检测到你换区了！已自动将频道矩阵调整为 CH.${start}~CH.${end}。`;
-      } else if (validChannels.length === 0) {
+      // 全新智能感知逻辑：如果完全没有交集，或者差距巨大，直接覆盖；否则扩展包容
+      if (maxDet < start || minDet > end) {
+        start = minDet;
+        end = maxDet;
+        screenshotOcrStatus.value = `🤖 AI 检测到全新频段！已自动将频道矩阵调整为 CH.${start}~CH.${end}。`;
+      } else {
+        if (minDet < start || maxDet > end) {
+          start = Math.min(start, minDet);
+          end = Math.max(end, maxDet);
+          screenshotOcrStatus.value = `🤖 AI 已自动扩展频道矩阵为 CH.${start}~CH.${end} 以包容所有新频道。`;
+        }
+      }
+
+      matrixStartCh.value = start;
+      matrixEndCh.value = end;
+      saveChannelRange();
+
+      const validChannels = [...gameChannels].filter(c => c >= start && c <= end).sort((a, b) => a - b);
+      
+      if (validChannels.length === 0) {
         screenshotOcrStatus.value = `⚠️ 识别到的频道均不在当前范围 (${start}~${end}) 内。`;
         return;
       }
