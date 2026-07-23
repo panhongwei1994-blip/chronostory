@@ -84,15 +84,23 @@
           />
         </div>
 
-        <!-- 截图上传识别 + 恢复 -->
-        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+        <!-- 截图上传识别 -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
           <button
             class="monitor-action-btn monitor-btn-amber"
-            style="height:28px; font-size:11px; padding:0 10px;"
+            style="height:32px; font-size:12px; padding:0 12px; display:flex; align-items:center; gap:6px;"
+            :disabled="isOcrLoading"
             @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
           >
-            📸 上传截图识别频道
+            <span v-if="isOcrLoading" style="display:inline-block; animation: spin 1s linear infinite;">⏳</span>
+            <span v-else>📸</span>
+            <span>{{ isOcrLoading ? 'AI 识别分析中...' : '上传截图识别频道' }}</span>
           </button>
+
+          <div v-if="isOcrLoading" style="font-size:12px; color:#fbbf24; display:flex; align-items:center; gap:6px; font-weight:600;">
+            <span>正在读取频道画面，请稍候...</span>
+          </div>
+
           <input
             ref="channelScreenshotInput"
             type="file"
@@ -100,13 +108,6 @@
             style="display:none;"
             @change="onScreenshotUploaded"
           />
-          <button
-            v-if="hiddenChannels.length > 0"
-            style="height:28px; font-size:10px; background:rgba(239,68,68,0.3); color:#fca5a5; border:1px solid rgba(239,68,68,0.5); border-radius:4px; padding:0 8px; cursor:pointer; font-weight:700;"
-            @click="resetHiddenChannels"
-          >
-            🔄 恢复已删 {{ hiddenChannels.length }} 频道
-          </button>
         </div>
       </div>
 
@@ -336,17 +337,20 @@ const matrixEndCh = ref<number>(130);
 const screenshotOcrStatus = ref<string>('');
 const channelScreenshotInput = ref<HTMLInputElement | null>(null);
 const ocrDebugImage = ref<string>('');
+const isOcrLoading = ref<boolean>(false);
 
 onMounted(() => {
   window.addEventListener('ocr-debug-image', (e: Event) => {
     ocrDebugImage.value = (e as CustomEvent).detail;
   });
 });
+
 async function onScreenshotUploaded(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
 
+  isOcrLoading.value = true;
   screenshotOcrStatus.value = '⏳ 正在加载图片并识别频道号...';
 
   try {
@@ -492,10 +496,11 @@ async function onScreenshotUploaded(event: Event) {
     }
   } catch (e: any) {
     screenshotOcrStatus.value = `⚠️ 识别失败: ${e?.message || '未知错误'}`;
+    triggerToast(`⚠️ 识别失败: ${e?.message || '未知错误'}`);
+  } finally {
+    isOcrLoading.value = false;
+    if (input) input.value = '';
   }
-
-  // 清空 input 以便可以重复上传同一张图
-  if (input) input.value = '';
 }
 
 // 🎥 AI 画面监控核心状态
