@@ -287,6 +287,26 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+
+// 全局 Toast 提示函数
+function triggerToast(msg: string) {
+  const toast = document.createElement('div');
+  toast.innerText = msg;
+  toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(15,23,42,0.9);color:#fff;padding:12px 24px;border-radius:8px;z-index:9999;font-size:14px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.1);opacity:0;transition:opacity 0.3s ease, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);pointer-events:none;text-align:center;max-width:90vw;word-break:break-word;';
+  toast.style.transform = 'translate(-50%, -20px)';
+  document.body.appendChild(toast);
+  
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translate(-50%, 0)';
+  });
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translate(-50%, -20px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
 import { getServerTimeInfo, type ServerRegion } from '../utils/timezone';
 
 export interface TeamChannelItem {
