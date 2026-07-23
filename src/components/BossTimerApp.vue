@@ -199,7 +199,11 @@
           v-for="item in activeCountingChannels"
           :key="item.id"
           class="channel-card"
-          :class="{ 'ready-card': item.remainingSec <= 0 && item.started, 'cooldown-card': item.cooldown }"
+          :class="{
+            'ready-card': item.remainingSec <= 0 && item.started,
+            'about-ready-card': item.remainingSec > 0 && item.remainingSec <= 120 && item.started,
+            'cooldown-card': item.cooldown
+          }"
           @click="onCardClick(item)"
         >
           <div class="card-main-content">
@@ -776,6 +780,7 @@ function getChMatrixClass(chNum: number) {
   if (!item || !item.started) return 'ch-idle';
   if (item.cooldown) return 'ch-cooldown';
   if (item.remainingSec <= 0) return 'ch-ready';
+  if (item.remainingSec <= 120) return 'ch-about-ready'; // 🔥 倒计时 <= 2 分钟进入【快刷新微红预警】
   return 'ch-counting';
 }
 

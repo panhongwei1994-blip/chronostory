@@ -345,6 +345,27 @@ html, body {
   animation: flash-red-alert 0.8s infinite alternate !important;
 }
 
+/* ⏳快刷新临近复活状态 (微红暖橙发光) */
+.channel-card.about-ready-card {
+  background: linear-gradient(135deg, #7c2d12, #c2410c) !important;
+  border: 2px solid #fb923c !important;
+  box-shadow: 0 0 16px rgba(234, 88, 12, 0.6) !important;
+  animation: pulse-about-ready-card 1.5s infinite alternate !important;
+}
+
+.about-ready-card .channel-title {
+  color: #ffffff !important;
+}
+
+.about-ready-card .timer-digits-text {
+  color: #ffedd5 !important;
+}
+
+@keyframes pulse-about-ready-card {
+  0% { box-shadow: 0 0 8px rgba(234, 88, 12, 0.4) !important; }
+  100% { box-shadow: 0 0 18px rgba(249, 115, 22, 0.8) !important; }
+}
+
 @keyframes flash-red-alert {
   0% { background: linear-gradient(135deg, #b91c1c, #dc2626) !important; }
   100% { background: linear-gradient(135deg, #ef4444, #ff0000) !important; }
@@ -704,6 +725,14 @@ html, body {
   box-shadow: 0 0 8px rgba(37, 99, 235, 0.5);
 }
 
+.ch-matrix-item-btn.ch-about-ready {
+  background: linear-gradient(135deg, #7c2d12, #ea580c);
+  color: #ffffff;
+  border-color: #fb923c;
+  box-shadow: 0 0 10px rgba(234, 88, 12, 0.6);
+  animation: pulse-about-ready 1.5s infinite alternate;
+}
+
 .ch-matrix-item-btn.ch-ready {
   background: linear-gradient(135deg, #991b1b, #ef4444);
   color: #ffffff;
@@ -715,6 +744,11 @@ html, body {
   background: rgba(100, 116, 139, 0.5);
   color: #94a3b8;
   border-color: rgba(148, 163, 184, 0.3);
+}
+
+@keyframes pulse-about-ready {
+  from { box-shadow: 0 0 4px rgba(234, 88, 12, 0.5); border-color: #fdba74; }
+  to { box-shadow: 0 0 12px rgba(234, 88, 12, 0.9); border-color: #ea580c; }
 }
 
 @keyframes pulse-ready {
