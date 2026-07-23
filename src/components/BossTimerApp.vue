@@ -108,64 +108,33 @@
             🔄 恢复已删 {{ hiddenChannels.length }} 频道
           </button>
         </div>
-        <div style="margin-bottom:4px; font-size:11px; color:#fbbf24; word-break:break-all;">
+        <div style="margin-top:4px; font-size:11px; color:#fbbf24; word-break:break-all;">
           {{ screenshotOcrStatus }}
         </div>
         
         <!-- OCR 调试视窗 -->
-        <div v-if="ocrDebugImage" style="margin-bottom: 10px; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
-          <p style="font-size: 11px; color: #94a3b8; margin: 0 0 6px 0;">🔍 AI 像素级提纯结果 (黑底白字防粘连):</p>
+        <div v-if="ocrDebugImage" style="margin-top: 10px; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+          <p style="font-size: 11px; color: #94a3b8; margin: 0 0 6px 0;">🔍 AI 视觉预处理结果 (用于分析遗漏原因):</p>
           <img :src="ocrDebugImage" style="max-width: 100%; border-radius: 4px; image-rendering: pixelated;" />
         </div>
-      </div>
-
-      <!-- 动态频道网格 -->
-      <div style="margin-bottom:12px; display:flex; align-items:center; gap:8px;">
-        <span style="font-size:12px; color:#94a3b8; font-weight:700;">频道显示模式:</span>
-        <button
-          @click="isCustomListMode = false"
-          :style="{ padding:'4px 8px', fontSize:'11px', borderRadius:'4px', cursor:'pointer', border:'none', background: !isCustomListMode ? '#3b82f6' : '#334155', color: '#fff' }"
-        >连续区间</button>
-        <button
-          @click="isCustomListMode = true"
-          :style="{ padding:'4px 8px', fontSize:'11px', borderRadius:'4px', cursor:'pointer', border:'none', background: isCustomListMode ? '#10b981' : '#334155', color: '#fff' }"
-        >精准列表 (推荐私服)</button>
-
-        <input
-          v-if="isCustomListMode"
-          v-model="manualAddCh"
-          @keyup.enter="addCustomChannel"
-          type="number"
-          placeholder="补漏频道回车"
-          style="width: 90px; padding: 4px; font-size: 11px; border-radius: 4px; border: 1px solid #475569; background: #1e293b; color: white; margin-left: auto;"
-        />
       </div>
 
       <!-- 动态自适应网格矩阵 (左键一键报时，右键一键删除频道) -->
       <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap:6px;">
         <button
-          v-for="ch in displayChannels"
+          v-for="ch in matrixChannelList"
           :key="ch"
-          @click="quickSelectCh(ch)"
-          @contextmenu.prevent="cancelChMatrix(ch)"
-          style="
-            position:relative;
-            display:flex; flex-direction:column; align-items:center; justify-content:center;
-            height:36px;
-            background:linear-gradient(145deg, #1e293b, #0f172a);
-            border:1px solid #334155; border-radius:6px; cursor:pointer;
-            box-shadow:inset 0 1px 0 rgba(255,255,255,0.05);
-            transition:all 0.1s;
-          "
-          class="channel-btn"
+          class="ch-matrix-item-btn"
           :class="getChMatrixClass(ch)"
+          @click="quickSelectCh(ch)"
+          @touchstart="onTouchStart(ch)"
+          @touchend="onTouchEnd"
+          @touchmove="onTouchEnd"
+          @contextmenu.prevent="cancelChMatrix(ch)"
+          :title="`点击开启/重置倒计时，电脑右键或手机长按删除CH ${ch}频道`"
         >
-          <span style="font-size:13px; font-weight:800; color:#f8fafc; text-shadow:0 1px 2px rgba(0,0,0,0.8);">{{ ch }}</span>
-          
-          <!-- 显示倒计时进度条 (若有首个活着的 Boss) -->
-          <div v-if="getChMatrixTimeText(ch)" style="position:absolute; bottom:0; left:0; right:0; height:4px; background:rgba(0,0,0,0.5); border-radius:0 0 6px 6px; overflow:hidden;">
-            <div :style="{ width: getChProgress(ch) + '%', height: '100%', background: getChProgress(ch) < 20 ? '#ef4444' : getChProgress(ch) < 50 ? '#f59e0b' : '#10b981', transition: 'width 1s linear' }"></div>
-          </div>
+          <span style="font-size:11px; font-weight:900;">CH {{ ch }}</span>
+          <span v-if="getChMatrixTimeText(ch)" style="font-size:9px; opacity:0.9; margin-top:2px;">{{ getChMatrixTimeText(ch) }}</span>
         </button>
       </div>
     </div>
@@ -358,50 +327,6 @@ export interface TeamChannelItem {
   cooldown?: boolean;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------------------------------------------
-// ✅ 核心状态区
-// ---------------------------------------------------------------------------------------------------------------------------------------------------------
-
-// --- 频道模式控制 ---
-const isCustomListMode = ref<boolean>(false);
-const customChannels = ref<number[]>([]);
-const manualAddCh = ref<string>('');
-
-const displayChannels = computed(() => {
-  if (isCustomListMode.value) {
-    return customChannels.value.filter(ch => !hiddenChannels.value.includes(ch));
-  }
-  const list = [];
-  for (let c = matrixStartCh.value; c <= matrixEndCh.value; c++) {
-    if (!hiddenChannels.value.includes(c)) list.push(c);
-  }
-  return list;
-});
-
-function addCustomChannel() {
-  const val = parseInt(manualAddCh.value, 10);
-  if (!isNaN(val) && val > 0 && !customChannels.value.includes(val)) {
-    customChannels.value.push(val);
-    customChannels.value.sort((a, b) => a - b);
-    hiddenChannels.value = hiddenChannels.value.filter(c => c !== val);
-    triggerToast(`➕ 已添加频道 ${val}`);
-    saveChannelRange();
-  }
-  manualAddCh.value = '';
-}
-
-// --- 配置保存与读取 ---
-function saveChannelRange() {
-  localStorage.setItem('bossTimer_matrixStartCh', matrixStartCh.value.toString());
-  localStorage.setItem('bossTimer_matrixEndCh', matrixEndCh.value.toString());
-  localStorage.setItem('bossTimer_customChannels', JSON.stringify(customChannels.value));
-  localStorage.setItem('bossTimer_isCustomListMode', JSON.stringify(isCustomListMode.value));
-  localStorage.setItem(`maple_ch_range_${activeServer.value}`, JSON.stringify({
-    start: matrixStartCh.value,
-    end: matrixEndCh.value
-  }));
-}
-
 // 状态
 const activeServer = ref<ServerRegion>('asia');
 const globalBossId = ref<string>('hai'); // 默认寒霜冰龙
@@ -410,6 +335,7 @@ const nowMs = ref<number>(Date.now());
 const newChannelNum = ref<number | null>(null);
 const customMinutes = ref<number | null>(null);
 const submitError = ref<string>('');
+const showMonitorPanel = ref<boolean>(false);
 
 // 频道范围 (例如 100 至 130)
 const matrixStartCh = ref<number>(100);
@@ -424,22 +350,7 @@ onMounted(() => {
   window.addEventListener('ocr-debug-image', (e: Event) => {
     ocrDebugImage.value = (e as CustomEvent).detail;
   });
-
-  const customModeData = localStorage.getItem('bossTimer_isCustomListMode');
-  if (customModeData) isCustomListMode.value = JSON.parse(customModeData);
-
-  const customChData = localStorage.getItem('bossTimer_customChannels');
-  if (customChData) {
-    try {
-      customChannels.value = JSON.parse(customChData);
-    } catch (e) {
-      customChannels.value = [];
-    }
-  }
-  loadChannelRange();
-  loadLocalChannels();
 });
-
 async function onScreenshotUploaded(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -448,6 +359,7 @@ async function onScreenshotUploaded(event: Event) {
   screenshotOcrStatus.value = '⏳ 正在加载图片并识别频道号...';
 
   try {
+    // 把图片画到一个临时 canvas 上
     const img = new Image();
     const url = URL.createObjectURL(file);
 
@@ -461,24 +373,31 @@ async function onScreenshotUploaded(event: Event) {
     const w = img.width * scale;
     const h = img.height * scale;
 
+    // 图像 1：正常灰度（用于捕获浅色背景的频道，如 CH.2, CH.5）
     const canvasNormal = document.createElement('canvas');
     canvasNormal.width = w; canvasNormal.height = h;
     const ctx1 = canvasNormal.getContext('2d');
     if (ctx1) {
       ctx1.imageSmoothingEnabled = true;
-      ctx1.filter = 'grayscale(100%) brightness(120%)';
+      // 提升 150% 亮度，把浅灰色背景直接推到纯白，黑字 (0) 保持纯黑。
+      ctx1.filter = 'grayscale(100%) brightness(150%) contrast(150%)';
       ctx1.drawImage(img, 0, 0, w, h);
     }
 
+    // 图像 2：反相灰度（用于捕获深色/高亮背景的频道，如 CH.9, CH.12, CH.16, CH.28）
     const canvasInvert = document.createElement('canvas');
     canvasInvert.width = w; canvasInvert.height = h;
     const ctx2 = canvasInvert.getContext('2d');
     if (ctx2) {
       ctx2.imageSmoothingEnabled = true;
-      ctx2.filter = 'grayscale(100%) invert(100%) brightness(150%)';
+      // 黑科技核心：CH.9 的深灰色背景反相后，会变成偏暗的灰色 (比如 105)。
+      // 如果直接交给 Tesseract，Otsu 全局阈值会把它和文字 (0) 一起判定为黑色，导致画面丢失。
+      // 因此必须先用 brightness(200%) 将它推过 128 中值，再用 contrast 将其彻底变白！文字因为是 0，乘法后依然是 0。
+      ctx2.filter = 'grayscale(100%) invert(100%) brightness(200%) contrast(150%)';
       ctx2.drawImage(img, 0, 0, w, h);
     }
 
+    // 更新调试图像（展示拼接效果供人工查看）
     const debugCanvas = document.createElement('canvas');
     debugCanvas.width = w; debugCanvas.height = h * 2;
     const debugCtx = debugCanvas.getContext('2d');
@@ -488,7 +407,7 @@ async function onScreenshotUploaded(event: Event) {
       window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: debugCanvas.toDataURL('image/jpeg') }));
     }
 
-    screenshotOcrStatus.value = '🔍 已生成多曝光平滑视图，启动 AI 引擎双线识别...';
+    screenshotOcrStatus.value = '🔍 已生成多重曝光视图，正在启动 AI 引擎分离识别...';
 
     // @ts-ignore
     const TesseractLib = window.Tesseract;
@@ -503,11 +422,18 @@ async function onScreenshotUploaded(event: Event) {
       tessedit_pageseg_mode: '11',
     });
 
+    screenshotOcrStatus.value = '🔍 正在扫描浅色底频道 (1/2)...';
     const ret1 = await worker.recognize(canvasNormal);
+    
+    screenshotOcrStatus.value = '🔍 正在扫描深色底频道 (2/2)...';
     const ret2 = await worker.recognize(canvasInvert);
+
     await worker.terminate();
 
-    const rawText = ret1.data.text + ' \\n ' + ret2.data.text;
+    const rawText = ret1.data.text + ' \n ' + ret2.data.text;
+    screenshotOcrStatus.value = `OCR 原文合并: "${rawText.substring(0, 200).replace(/\n/g, ' ')}"`;
+
+    // 提取频道号
     const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
     const matches = [...rawText.matchAll(regex)];
     const gameChannels = new Set<number>();
@@ -520,35 +446,50 @@ async function onScreenshotUploaded(event: Event) {
     });
 
     if (gameChannels.size > 0) {
-      let start = matrixStartCh.value || 1;
-      let end = matrixEndCh.value || 400;
-      const minDet = Math.min(...gameChannels);
-      const maxDet = Math.max(...gameChannels);
+      const allNumbers = [...gameChannels].sort((a, b) => a - b);
+      let filteredNumbers = allNumbers;
 
-      if (maxDet < start || minDet > end) {
-        start = minDet;
-        end = maxDet;
-      } else {
-        start = Math.min(start, minDet);
-        end = Math.max(end, maxDet);
+      // 智能噪点过滤：在 MapleStory 频道列表中，一页显示的所有频道号跨度通常在 300 以内
+      // 如果识别出的列表中有极个别离群噪点（如误将人数 3/25 读成 55788 或 5），使用中位数 300 范围自动剔除
+      if (allNumbers.length >= 4) {
+        const mid = Math.floor(allNumbers.length / 2);
+        const median = allNumbers[mid];
+        const validRange = allNumbers.filter(num => Math.abs(num - median) <= 300);
+        if (validRange.length > 0) {
+          filteredNumbers = validRange;
+        }
       }
+
+      const start = filteredNumbers[0];
+      const end = filteredNumbers[filteredNumbers.length - 1];
 
       matrixStartCh.value = start;
       matrixEndCh.value = end;
       saveChannelRange();
 
-      const validChannels = [...gameChannels].sort((a, b) => a - b);
-      hiddenChannels.value = hiddenChannels.value.filter(ch => ch < start || ch > end);
-      
-      screenshotOcrStatus.value = `🎉 识别到 ${validChannels.length} 个频道。`;
-      triggerToast(`✅ 识别 ${validChannels.length} 个频道`);
+      const validChannels = filteredNumbers;
+
+      // 在范围内，删除不存在的频道
+      let removedCount = 0;
+      hiddenChannels.value = [];
+      for (let c = start; c <= end; c++) {
+        if (!validChannels.includes(c)) {
+          hiddenChannels.value.push(c);
+          removedCount++;
+        }
+      }
+      saveHiddenChannels();
+
+      screenshotOcrStatus.value = `🤖 AI 已自动决定频道范围 CH.${start}~CH.${end}！已识别到 ${validChannels.length} 个真实频道 (${validChannels.map(c => 'CH.' + c).join(', ')})，并去除了 ${removedCount} 个空缺/噪点频道。`;
+      triggerToast(`✅ 自动决定范围 CH.${start}~CH.${end}`);
     } else {
-      screenshotOcrStatus.value = `⚠️ 未识别到频道号。`;
+      screenshotOcrStatus.value = `⚠️ 未识别到频道号。OCR原文: "${rawText.substring(0, 200)}"。请截取完整的 CHANGE CHANNEL 弹窗。`;
     }
   } catch (e: any) {
     screenshotOcrStatus.value = `⚠️ 识别失败: ${e?.message || '未知错误'}`;
   }
 
+  // 清空 input 以便可以重复上传同一张图
   if (input) input.value = '';
 }
 
@@ -560,17 +501,40 @@ const monitorStatus = ref<string>('');
 const boundChannelNum = ref<number | null>(100);
 const isHpBarPresent = ref<boolean>(false);
 
+let wasHpBarPresent = false;
+let hpBarDisappearCount = 0;
+let mediaStream: MediaStream | null = null;
+let scanTimer: any = null;
+let channelOcrTimer: any = null;
+let isChannelOcrRunning = false;
+let lastChannelOcrAt = 0;
+const missingChannelVotes = new Map<number, number>();
+const validChannelVotes = new Map<number, number>();
+type OcrMode = 'current-tile' | 'channel-tile' | 'channel-panel' | 'full';
+type OcrCrop = { x: number; y: number; width: number; height: number };
+
 const teamChannels = ref<TeamChannelItem[]>([]);
+
+// 已删除抹去的频道黑名单
 const hiddenChannels = ref<number[]>([]);
 
 function saveHiddenChannels() {
-  localStorage.setItem(`maple_hidden_channels_${activeServer.value}`, JSON.stringify(hiddenChannels.value));
+  try {
+    localStorage.setItem(`maple_hidden_channels_${activeServer.value}`, JSON.stringify(hiddenChannels.value));
+  } catch (e) {}
 }
 
 function loadHiddenChannels() {
-  const raw = localStorage.getItem(`maple_hidden_channels_${activeServer.value}`);
-  if (raw) hiddenChannels.value = JSON.parse(raw);
-  else hiddenChannels.value = [];
+  try {
+    const raw = localStorage.getItem(`maple_hidden_channels_${activeServer.value}`);
+    if (raw) {
+      hiddenChannels.value = JSON.parse(raw);
+    } else {
+      hiddenChannels.value = [];
+    }
+  } catch (e) {
+    hiddenChannels.value = [];
+  }
 }
 
 function resetHiddenChannels() {
@@ -578,10 +542,29 @@ function resetHiddenChannels() {
   saveHiddenChannels();
 }
 
+// 移动端 0.6 秒长按触发删除频道
+let longTouchTimer: any = null;
+
+function onTouchStart(chNum: number) {
+  if (longTouchTimer) clearTimeout(longTouchTimer);
+  longTouchTimer = setTimeout(() => {
+    cancelChMatrix(chNum);
+  }, 600);
+}
+
+function onTouchEnd() {
+  if (longTouchTimer) {
+    clearTimeout(longTouchTimer);
+    longTouchTimer = null;
+  }
+}
+
+// 电脑端右键或手机端长按删除该频道
 function cancelChMatrix(chNum: number) {
   teamChannels.value = teamChannels.value.filter(
     (i) => !(Number(i.channelNum) === Number(chNum) && String(i.bossId) === String(globalBossId.value))
   );
+  // 加入隐藏黑名单，频道从矩阵中彻底消失
   if (!hiddenChannels.value.includes(chNum)) {
     hiddenChannels.value.push(chNum);
     saveHiddenChannels();
@@ -607,13 +590,25 @@ const currentBossMinutes = computed(() => {
 const serverInfo = computed(() => getServerTimeInfo(activeServer.value, nowMs.value));
 const resetCountDownText = computed(() => formatSeconds(serverInfo.value.secondsUntilReset));
 
+// 正在倒计时的有效频道列表
 const activeCountingChannels = computed(() => {
   return [...teamChannels.value]
     .filter((item) => item.bossId === globalBossId.value && item.started)
     .sort((a, b) => a.remainingSec - b.remainingSec);
 });
 
-
+const matrixChannelList = computed(() => {
+  const start = Math.max(1, matrixStartCh.value || 1);
+  let end = Math.max(start, matrixEndCh.value || start);
+  if (end - start > 400) end = start + 400;
+  const list: number[] = [];
+  for (let c = start; c <= end; c++) {
+    if (!hiddenChannels.value.includes(c)) {
+      list.push(c);
+    }
+  }
+  return list;
+});
 
 function selectBoss(bossId: string) {
   globalBossId.value = bossId;
@@ -629,7 +624,14 @@ function selectServer(server: ServerRegion) {
   triggerToast(`已切换服务器为【${label}】`);
 }
 
-
+function saveChannelRange() {
+  try {
+    localStorage.setItem(`maple_ch_range_${activeServer.value}`, JSON.stringify({
+      start: matrixStartCh.value,
+      end: matrixEndCh.value
+    }));
+  } catch (e) {}
+}
 
 function loadChannelRange() {
   try {
