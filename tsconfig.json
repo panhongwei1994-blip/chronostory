@@ -1,11 +1,22 @@
 {
-  "extends": "astro/tsconfigs/strict",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
-  },
-  "include": ["src/**/*", "astro.config.mjs"],
-  "exclude": ["dist", ".astro", ".wrangler", "node_modules"]
+	"extends": "astro/tsconfigs/strict",
+	"compilerOptions": {
+		"baseUrl": ".",
+		"paths": {
+			"@/*": [
+				"src/*"
+			]
+		}
+	},
+	"include": [
+		"src/**/*",
+		"astro.config.mjs",
+		"./worker-configuration.d.ts"
+	],
+	"exclude": [
+		"dist",
+		".astro",
+		".wrangler",
+		"node_modules"
+	]
 }

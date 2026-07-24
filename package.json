@@ -6,8 +6,10 @@
     "dev": "astro dev",
     "build": "astro check && astro build",
     "postbuild": "printf '_worker.js\\n' > dist/.assetsignore",
-    "preview": "astro preview",
-    "check": "astro check"
+    "preview": "pnpm run build && wrangler dev",
+    "check": "astro check",
+    "deploy": "pnpm run build && wrangler deploy",
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
@@ -22,6 +24,6 @@
   },
   "devDependencies": {
     "tsx": "^4.21.0",
-    "wrangler": "^4.113.0"
+    "wrangler": "^4.114.0"
   }
 }
