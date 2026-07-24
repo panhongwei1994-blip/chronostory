@@ -41,6 +41,14 @@
     <div class="boss-option-selector">
       <button
         class="boss-option-btn"
+        :class="{ active: globalBossId === 'yu' }"
+        @click="selectBoss('yu')"
+      >
+        <span>🐟 魚頭/海怒斯</span>
+        <span class="time-hint">30 分钟刷新</span>
+      </button>
+      <button
+        class="boss-option-btn"
         :class="{ active: globalBossId === 'hai' }"
         @click="selectBoss('hai')"
       >
@@ -53,14 +61,6 @@
         @click="selectBoss('hei')"
       >
         <span>🦍 葛雷黑金剛</span>
-        <span class="time-hint">30 分钟刷新</span>
-      </button>
-      <button
-        class="boss-option-btn"
-        :class="{ active: globalBossId === 'yu' }"
-        @click="selectBoss('yu')"
-      >
-        <span>🐟 魚頭/海怒斯</span>
         <span class="time-hint">30 分钟刷新</span>
       </button>
     </div>
@@ -290,7 +290,7 @@ export interface TeamChannelItem {
 
 // 状态
 const activeServer = ref<ServerRegion>('asia');
-const globalBossId = ref<string>('hai'); // 默认寒霜冰龙
+const globalBossId = ref<string>('yu'); // 默认鱼头/海怒斯
 const soundEnabled = ref<boolean>(false);
 const nowMs = ref<number>(Date.now());
 const newChannelNum = ref<number | null>(null);
@@ -438,6 +438,9 @@ async function processScreenshotFiles(files: File[]) {
         matrixChannelList.value.forEach((ch) => combinedChannels.add(ch));
         sortedNew.forEach((ch) => combinedChannels.add(ch));
       } else {
+        // 全新频道重置：连同手动追加的额外频道一并彻底清空！
+        extraCustomChannels.value = [];
+        saveExtraChannels();
         sortedNew.forEach((ch) => combinedChannels.add(ch));
       }
 
