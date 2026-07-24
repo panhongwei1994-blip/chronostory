@@ -297,6 +297,7 @@ const screenshotOcrStatus = ref<string>('');
 const channelScreenshotInput = ref<HTMLInputElement | null>(null);
 const ocrDebugImage = ref<string>('');
 const isOcrLoading = ref<boolean>(false);
+const lastOcrTime = ref<number>(0);
 
 onMounted(() => {
   window.addEventListener('ocr-debug-image', (e: Event) => {
@@ -413,8 +414,14 @@ async function processScreenshotFiles(files: File[]) {
       const newMin = sortedNew[0];
       const newMax = sortedNew[sortedNew.length - 1];
 
-      // 检查智能累加还是重置覆盖：
-      // 判定逻辑：只有当新截图频道与现有矩阵范围【属于同一数域段落且跨度 <= 250】时，才判定为同服翻页累加！
+      // 时间窗口与同批次判定（解决“不同时间段”冲突）：
+      // 1. 同一次上传多张图片 (files.length > 1) ➔ 明确为同时间段翻页累加
+      // 2. 距离上次识别在 5 秒以内 ➔ 明确为同时间段连续粘贴/追加
+      // 3. 隔了较长时间单独上传 ➔ 判定为【新时间段/服务器重新抓图】，彻底重置为最新截图！
+      const now = Date.now();
+      const isContinuousBatch = files.length > 1 || (lastOcrTime.value > 0 && now - lastOcrTime.value < 5000);
+      lastOcrTime.value = now;
+
       const currentMin = matrixStartCh.value || 0;
       const currentMax = matrixEndCh.value || 0;
       const isSameRangeDomain =
@@ -425,12 +432,12 @@ async function processScreenshotFiles(files: File[]) {
 
       const combinedChannels = new Set<number>();
 
-      if (isSameRangeDomain) {
-        // 同服同一频段的翻页/滚动：收集原有有效频道进行叠加
+      if (isContinuousBatch && isSameRangeDomain) {
+        // 同时间段的翻页/滚动累加
         matrixChannelList.value.forEach((ch) => combinedChannels.add(ch));
         sortedNew.forEach((ch) => combinedChannels.add(ch));
       } else {
-        // 跨服 / 跨区 / 离谱跨度：重置为新截图的真实频道
+        // 不同时间段 / 隔了很久的全新截图 ➔ 以最新截图为准重置刷新！
         sortedNew.forEach((ch) => combinedChannels.add(ch));
       }
 
