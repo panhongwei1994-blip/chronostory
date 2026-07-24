@@ -109,6 +109,7 @@
             ref="channelScreenshotInput"
             type="file"
             accept="image/*"
+            multiple
             style="display:none;"
             @change="onScreenshotUploaded"
           />
@@ -305,159 +306,137 @@ onMounted(() => {
 
 async function onScreenshotUploaded(event: Event) {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
+  const files = input.files ? Array.from(input.files) : [];
+  if (files.length === 0) return;
+
+  await processScreenshotFiles(files);
+  if (input) input.value = '';
+}
+
+// 核心函数：处理一张或多张频道截图（支持多文件选择、Ctrl+V 粘贴累加）
+async function processScreenshotFiles(files: File[]) {
+  if (files.length === 0) return;
 
   isOcrLoading.value = true;
-  screenshotOcrStatus.value = '⏳ 正在加载图片并识别频道号...';
+  screenshotOcrStatus.value = `⏳ 正在处理 ${files.length} 张频道截图，请稍候...`;
 
   try {
-    // 把图片画到一个临时 canvas 上
-    const img = new Image();
-    const url = URL.createObjectURL(file);
+    const allDetectedChannels = new Set<number>();
 
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('图片加载失败'));
-      img.src = url;
+    // 尝试收集页面上现有的有效频道，保持多图追加
+    matrixChannelList.value.forEach((ch) => {
+      allDetectedChannels.add(ch);
     });
 
-    const scale = 3;
-    const w = img.width * scale;
-    const h = img.height * scale;
+    for (let idx = 0; idx < files.length; idx++) {
+      const file = files[idx];
+      const img = new Image();
+      const url = URL.createObjectURL(file);
 
-    // 图像 1：正常灰度（用于捕获浅色背景的频道，如 CH.2, CH.5）
-    const canvasNormal = document.createElement('canvas');
-    canvasNormal.width = w; canvasNormal.height = h;
-    const ctx1 = canvasNormal.getContext('2d');
-    if (ctx1) {
-      ctx1.imageSmoothingEnabled = true;
-      // 提升 150% 亮度，把浅灰色背景直接推到纯白，黑字 (0) 保持纯黑。
-      ctx1.filter = 'grayscale(100%) brightness(150%) contrast(150%)';
-      ctx1.drawImage(img, 0, 0, w, h);
-    }
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = url;
+      });
 
-    // 图像 2：反相灰度（用于捕获深色/高亮背景的频道，如 CH.9, CH.12, CH.16, CH.28）
-    const canvasInvert = document.createElement('canvas');
-    canvasInvert.width = w; canvasInvert.height = h;
-    const ctx2 = canvasInvert.getContext('2d');
-    if (ctx2) {
-      ctx2.imageSmoothingEnabled = true;
-      // 黑科技核心：CH.9 的深灰色背景反相后，会变成偏暗的灰色 (比如 105)。
-      // 如果直接交给 Tesseract，Otsu 全局阈值会把它和文字 (0) 一起判定为黑色，导致画面丢失。
-      // 因此必须先用 brightness(200%) 将它推过 128 中值，再用 contrast 将其彻底变白！文字因为是 0，乘法后依然是 0。
-      ctx2.filter = 'grayscale(100%) invert(100%) brightness(200%) contrast(150%)';
-      ctx2.drawImage(img, 0, 0, w, h);
-    }
+      const scale = 3;
+      const w = img.width * scale;
+      const h = img.height * scale;
 
-    // 更新调试图像（展示拼接效果供人工查看）
-    const debugCanvas = document.createElement('canvas');
-    debugCanvas.width = w; debugCanvas.height = h * 2;
-    const debugCtx = debugCanvas.getContext('2d');
-    if (debugCtx) {
-      debugCtx.drawImage(canvasNormal, 0, 0);
-      debugCtx.drawImage(canvasInvert, 0, h);
-      window.dispatchEvent(new CustomEvent('ocr-debug-image', { detail: debugCanvas.toDataURL('image/jpeg') }));
-    }
-
-    screenshotOcrStatus.value = '🔍 已生成多重曝光视图，正在启动 AI 引擎分离识别...';
-
-    // @ts-ignore
-    const TesseractLib = window.Tesseract;
-    if (!TesseractLib) {
-      screenshotOcrStatus.value = '⚠️ Tesseract OCR 引擎未加载，请刷新页面';
-      return;
-    }
-
-    const worker = await TesseractLib.createWorker('eng');
-    await worker.setParameters({
-      tessedit_char_whitelist: 'CHch.0123456789/<>: ',
-      tessedit_pageseg_mode: '11',
-    });
-
-    screenshotOcrStatus.value = '🔍 正在扫描浅色底频道 (1/2)...';
-    const ret1 = await worker.recognize(canvasNormal);
-    
-    screenshotOcrStatus.value = '🔍 正在扫描深色底频道 (2/2)...';
-    const ret2 = await worker.recognize(canvasInvert);
-
-    await worker.terminate();
-
-    const rawText = ret1.data.text + ' \n ' + ret2.data.text;
-    screenshotOcrStatus.value = `OCR 原文合并: "${rawText.substring(0, 200).replace(/\n/g, ' ')}"`;
-
-    // 提取频道号
-    const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
-    const matches = [...rawText.matchAll(regex)];
-    const gameChannels = new Set<number>();
-    
-    matches.forEach((m) => {
-      const val = parseInt(m[1], 10);
-      if (!isNaN(val) && val >= 1 && val <= 99999) {
-        gameChannels.add(val);
+      const canvasNormal = document.createElement('canvas');
+      canvasNormal.width = w; canvasNormal.height = h;
+      const ctx1 = canvasNormal.getContext('2d');
+      if (ctx1) {
+        ctx1.imageSmoothingEnabled = true;
+        ctx1.filter = 'grayscale(100%) brightness(150%) contrast(150%)';
+        ctx1.drawImage(img, 0, 0, w, h);
       }
-    });
 
-    if (gameChannels.size > 0) {
-      const allNumbers = [...gameChannels].sort((a, b) => a - b);
-      let filteredNumbers = [...allNumbers];
+      const canvasInvert = document.createElement('canvas');
+      canvasInvert.width = w; canvasInvert.height = h;
+      const ctx2 = canvasInvert.getContext('2d');
+      if (ctx2) {
+        ctx2.imageSmoothingEnabled = true;
+        ctx2.filter = 'grayscale(100%) invert(100%) brightness(200%) contrast(150%)';
+        ctx2.drawImage(img, 0, 0, w, h);
+      }
 
-      // 核心算法：一张截图最多显示 25 个频道，因此合法频段一定紧密贴合中位数。
-      // 自动循环剥离头部与尾部与中位数偏离离谱的数字（如误将人数 3/25 误读成 55788 或 5/7）
-      while (filteredNumbers.length > 1) {
-        const mid = Math.floor(filteredNumbers.length / 2);
-        const median = filteredNumbers[mid];
-        
-        const headDiff = median - filteredNumbers[0];
-        const tailDiff = filteredNumbers[filteredNumbers.length - 1] - median;
-        
-        // 单张截图最多 25 个频道，一页内频道的合理跨度绝不会超过 200
-        if (headDiff > 200 || tailDiff > 200) {
-          if (headDiff >= tailDiff && headDiff > 200) {
-            filteredNumbers.shift(); // 自动忽略头部离谱数字 (例如 CH.5, CH.7)
-          } else if (tailDiff > 200) {
-            filteredNumbers.pop(); // 自动忽略尾部离谱数字 (例如 CH.55788, CH.36725)
-          } else {
-            break;
-          }
-        } else {
-          break; // 头尾均处于合理区间
+      // @ts-ignore
+      const TesseractLib = window.Tesseract;
+      if (!TesseractLib) continue;
+
+      const worker = await TesseractLib.createWorker('eng');
+      await worker.setParameters({
+        tessedit_char_whitelist: 'CHch.0123456789/<>: ',
+        tessedit_pageseg_mode: '11',
+      });
+
+      const ret1 = await worker.recognize(canvasNormal);
+      const ret2 = await worker.recognize(canvasInvert);
+      await worker.terminate();
+
+      const rawText = ret1.data.text + ' \n ' + ret2.data.text;
+      const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
+      const matches = [...rawText.matchAll(regex)];
+
+      const singleImgChannels: number[] = [];
+      matches.forEach((m) => {
+        const val = parseInt(m[1], 10);
+        if (!isNaN(val) && val >= 1 && val <= 99999) {
+          singleImgChannels.push(val);
         }
+      });
+
+      // 过滤单张截图中的头尾离群噪点
+      if (singleImgChannels.length > 0) {
+        const sorted = [...singleImgChannels].sort((a, b) => a - b);
+        let filtered = [...sorted];
+        while (filtered.length > 1) {
+          const mid = Math.floor(filtered.length / 2);
+          const median = filtered[mid];
+          const headDiff = median - filtered[0];
+          const tailDiff = filtered[filtered.length - 1] - median;
+          if (headDiff > 200 || tailDiff > 200) {
+            if (headDiff >= tailDiff && headDiff > 200) filtered.shift();
+            else if (tailDiff > 200) filtered.pop();
+            else break;
+          } else break;
+        }
+        if (filtered.length === 0) filtered = sorted;
+        filtered.forEach((ch) => allDetectedChannels.add(ch));
       }
+    }
 
-      if (filteredNumbers.length === 0) filteredNumbers = allNumbers;
+    if (allDetectedChannels.size > 0) {
+      const sortedAll = [...allDetectedChannels].sort((a, b) => a - b);
+      const newMin = sortedAll[0];
+      const newMax = sortedAll[sortedAll.length - 1];
 
-      const start = filteredNumbers[0];
-      const end = filteredNumbers[filteredNumbers.length - 1];
+      let start = newMin;
+      let end = newMax;
 
       matrixStartCh.value = start;
       matrixEndCh.value = end;
       saveChannelRange();
 
-      const validChannels = filteredNumbers;
-
-      // 在范围内，删除不存在的频道
-      let removedCount = 0;
+      // 剔除不在任何已识别集合里的缺失频道
+      const validChannels = sortedAll;
       hiddenChannels.value = [];
       for (let c = start; c <= end; c++) {
         if (!validChannels.includes(c)) {
           hiddenChannels.value.push(c);
-          removedCount++;
         }
       }
       saveHiddenChannels();
 
-      screenshotOcrStatus.value = `🤖 AI 已自动决定频道范围 CH.${start}~CH.${end}！已识别到 ${validChannels.length} 个真实频道 (${validChannels.map(c => 'CH.' + c).join(', ')})，并去除了 ${removedCount} 个空缺/噪点频道。`;
-      triggerToast(`✅ 自动决定范围 CH.${start}~CH.${end}`);
+      triggerToast(`🎉 已成功识别并合体 ${files.length} 张截图！包含 ${validChannels.length} 个真实频道 (CH.${start}~CH.${end})`);
     } else {
-      screenshotOcrStatus.value = `⚠️ 未识别到频道号。OCR原文: "${rawText.substring(0, 200)}"。请截取完整的 CHANGE CHANNEL 弹窗。`;
+      triggerToast('⚠️ 未识别到有效频道号，请检查截图');
     }
   } catch (e: any) {
-    screenshotOcrStatus.value = `⚠️ 识别失败: ${e?.message || '未知错误'}`;
     triggerToast(`⚠️ 识别失败: ${e?.message || '未知错误'}`);
   } finally {
     isOcrLoading.value = false;
-    if (input) input.value = '';
   }
 }
 
@@ -858,11 +837,28 @@ function playAlertSound() {
 
 let timerInterval: any = null;
 
+function handlePaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const imageFiles: File[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) {
+      const file = items[i].getAsFile();
+      if (file) imageFiles.push(file);
+    }
+  }
+  if (imageFiles.length > 0) {
+    processScreenshotFiles(imageFiles);
+  }
+}
+
 onMounted(() => {
   loadChannelRange();
   loadLocalChannels();
   loadHiddenChannels();
   loadExtraChannels();
+
+  window.addEventListener('paste', handlePaste);
 
   timerInterval = setInterval(() => {
     const current = Date.now();
@@ -882,5 +878,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timerInterval) clearInterval(timerInterval);
+  window.removeEventListener('paste', handlePaste);
 });
 </script>
