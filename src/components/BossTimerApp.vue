@@ -91,28 +91,28 @@
         </div>
 
         <!-- 截图上传识别双选项按钮 -->
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:nowrap;">
           <template v-if="!isOcrLoading">
             <button
               class="monitor-action-btn monitor-btn-amber"
-              style="height:28px; font-size:11px; padding:0 10px; cursor:pointer;"
+              style="height:24px; font-size:10px; padding:0 8px; font-weight:800; border-radius:5px; cursor:pointer; white-space:nowrap;"
               @click="triggerUpload('fresh')"
               title="全新时间段/新画面：删除旧频道，仅基于新截图建立阵列"
             >
-              ✨ 全新频道 (覆盖建立)
+              ✨ 全新 (覆盖)
             </button>
             <button
               class="monitor-action-btn"
-              style="height:28px; font-size:11px; padding:0 10px; background:linear-gradient(135deg, #059669, #10b981); color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; font-weight:700; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+              style="height:24px; font-size:10px; padding:0 8px; background:linear-gradient(135deg, #059669, #10b981); color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:5px; font-weight:800; cursor:pointer; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
               @click="triggerUpload('append')"
               title="同时间段多页翻页：保留现有频道，追加扩展更多频道"
             >
-              ➕ 追加更多 (翻页扩展)
+              ➕ 追加 (扩展)
             </button>
           </template>
 
-          <span v-else style="font-size:11px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
-            ⏳ 正在读取频道画面，请稍候...
+          <span v-else style="font-size:10px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite; white-space:nowrap;">
+            ⏳ 正在读取频道画面...
           </span>
 
           <input
