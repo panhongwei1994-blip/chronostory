@@ -90,16 +90,26 @@
           />
         </div>
 
-        <!-- 截图上传识别 -->
+        <!-- 截图上传识别双选项按钮 -->
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-          <button
-            v-if="!isOcrLoading"
-            class="monitor-action-btn monitor-btn-amber"
-            style="height:28px; font-size:11px; padding:0 10px;"
-            @click="($refs.channelScreenshotInput as HTMLInputElement)?.click()"
-          >
-            📸 上传截图识别频道
-          </button>
+          <template v-if="!isOcrLoading">
+            <button
+              class="monitor-action-btn monitor-btn-amber"
+              style="height:28px; font-size:11px; padding:0 10px; cursor:pointer;"
+              @click="triggerUpload('fresh')"
+              title="全新时间段/新画面：删除旧频道，仅基于新截图建立阵列"
+            >
+              ✨ 全新频道 (覆盖建立)
+            </button>
+            <button
+              class="monitor-action-btn"
+              style="height:28px; font-size:11px; padding:0 10px; background:linear-gradient(135deg, #059669, #10b981); color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; font-weight:700; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.2);"
+              @click="triggerUpload('append')"
+              title="同时间段多页翻页：保留现有频道，追加扩展更多频道"
+            >
+              ➕ 追加更多 (翻页扩展)
+            </button>
+          </template>
 
           <span v-else style="font-size:11px; color:#fbbf24; font-weight:700; animation: pulse 1.5s infinite;">
             ⏳ 正在读取频道画面，请稍候...
@@ -298,6 +308,14 @@ const channelScreenshotInput = ref<HTMLInputElement | null>(null);
 const ocrDebugImage = ref<string>('');
 const isOcrLoading = ref<boolean>(false);
 const lastOcrTime = ref<number>(0);
+const currentOcrMode = ref<'fresh' | 'append'>('fresh');
+
+function triggerUpload(mode: 'fresh' | 'append') {
+  currentOcrMode.value = mode;
+  if (channelScreenshotInput.value) {
+    channelScreenshotInput.value.click();
+  }
+}
 
 onMounted(() => {
   window.addEventListener('ocr-debug-image', (e: Event) => {
@@ -411,33 +429,15 @@ async function processScreenshotFiles(files: File[]) {
 
     if (newlyScannedChannels.size > 0) {
       const sortedNew = [...newlyScannedChannels].sort((a, b) => a - b);
-      const newMin = sortedNew[0];
-      const newMax = sortedNew[sortedNew.length - 1];
-
-      // 时间窗口与同批次判定（解决“不同时间段”冲突）：
-      // 1. 同一次上传多张图片 (files.length > 1) ➔ 明确为同时间段翻页累加
-      // 2. 距离上次识别在 5 秒以内 ➔ 明确为同时间段连续粘贴/追加
-      // 3. 隔了较长时间单独上传 ➔ 判定为【新时间段/服务器重新抓图】，彻底重置为最新截图！
-      const now = Date.now();
-      const isContinuousBatch = files.length > 1 || (lastOcrTime.value > 0 && now - lastOcrTime.value < 5000);
-      lastOcrTime.value = now;
-
-      const currentMin = matrixStartCh.value || 0;
-      const currentMax = matrixEndCh.value || 0;
-      const isSameRangeDomain =
-        currentMin > 0 &&
-        currentMax > 0 &&
-        Math.abs(newMin - currentMin) <= 300 &&
-        Math.abs(newMax - currentMax) <= 300;
-
       const combinedChannels = new Set<number>();
 
-      if (isContinuousBatch && isSameRangeDomain) {
-        // 同时间段的翻页/滚动累加
+      // 用户明确选择模式：
+      // 'append' (追加更多/翻页扩展) ➔ 保留已有矩阵频道并合并新频道
+      // 'fresh' (全新频道/覆盖建立) ➔ 清空旧频道，仅基于新截图重建
+      if (currentOcrMode.value === 'append') {
         matrixChannelList.value.forEach((ch) => combinedChannels.add(ch));
         sortedNew.forEach((ch) => combinedChannels.add(ch));
       } else {
-        // 不同时间段 / 隔了很久的全新截图 ➔ 以最新截图为准重置刷新！
         sortedNew.forEach((ch) => combinedChannels.add(ch));
       }
 
@@ -459,10 +459,10 @@ async function processScreenshotFiles(files: File[]) {
       }
       saveHiddenChannels();
 
-      if (isSameRangeDomain) {
-        triggerToast(`🎉 【翻页滚动合体】成功融合 ${files.length} 张截图！共 ${validChannels.length} 个真实频道 (CH.${start}~CH.${end})`);
+      if (currentOcrMode.value === 'append') {
+        triggerToast(`➕ 【翻页扩展成功】已成功追加扩展矩阵！当前共 ${validChannels.length} 个频道 (CH.${start}~CH.${end})`);
       } else {
-        triggerToast(`✅ 已重新载入频道矩阵 (CH.${start}~CH.${end})，共识别 ${validChannels.length} 个频道`);
+        triggerToast(`✨ 【全新频道重置】已基于新截图重建矩阵！包含 ${validChannels.length} 个频道 (CH.${start}~CH.${end})`);
       }
     } else {
       triggerToast('⚠️ 未识别到有效频道号，请检查截图');
