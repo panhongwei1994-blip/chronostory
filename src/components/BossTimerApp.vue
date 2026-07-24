@@ -321,12 +321,8 @@ async function processScreenshotFiles(files: File[]) {
   screenshotOcrStatus.value = `⏳ 正在处理 ${files.length} 张频道截图，请稍候...`;
 
   try {
-    const allDetectedChannels = new Set<number>();
-
-    // 尝试收集页面上现有的有效频道，保持多图追加
-    matrixChannelList.value.forEach((ch) => {
-      allDetectedChannels.add(ch);
-    });
+    const newlyScannedChannels = new Set<number>();
+    let detectedServerName = '';
 
     for (let idx = 0; idx < files.length; idx++) {
       const file = files[idx];
@@ -367,7 +363,7 @@ async function processScreenshotFiles(files: File[]) {
 
       const worker = await TesseractLib.createWorker('eng');
       await worker.setParameters({
-        tessedit_char_whitelist: 'CHch.0123456789/<>: ',
+        tessedit_char_whitelist: 'CHch.0123456789/<>: ASNAEUTokyoOregonPlayers',
         tessedit_pageseg_mode: '11',
       });
 
@@ -376,6 +372,11 @@ async function processScreenshotFiles(files: File[]) {
       await worker.terminate();
 
       const rawText = ret1.data.text + ' \n ' + ret2.data.text;
+
+      // 提取服务器标签信息
+      if (/AS|Tokyo/i.test(rawText)) detectedServerName = 'asia';
+      else if (/NA|Oregon/i.test(rawText)) detectedServerName = 'na';
+
       const regex = /(?:[Cc<>]?[.\s_-]*[Hh])[.\s_-]*(\d{1,5})/gi;
       const matches = [...rawText.matchAll(regex)];
 
@@ -403,17 +404,39 @@ async function processScreenshotFiles(files: File[]) {
           } else break;
         }
         if (filtered.length === 0) filtered = sorted;
-        filtered.forEach((ch) => allDetectedChannels.add(ch));
+        filtered.forEach((ch) => newlyScannedChannels.add(ch));
       }
     }
 
-    if (allDetectedChannels.size > 0) {
-      const sortedAll = [...allDetectedChannels].sort((a, b) => a - b);
-      const newMin = sortedAll[0];
-      const newMax = sortedAll[sortedAll.length - 1];
+    if (newlyScannedChannels.size > 0) {
+      const sortedNew = [...newlyScannedChannels].sort((a, b) => a - b);
+      const newMin = sortedNew[0];
+      const newMax = sortedNew[sortedNew.length - 1];
 
-      let start = newMin;
-      let end = newMax;
+      // 检查智能累加还是重置覆盖：
+      // 判定逻辑：只有当新截图频道与现有矩阵范围【属于同一数域段落且跨度 <= 250】时，才判定为同服翻页累加！
+      const currentMin = matrixStartCh.value || 0;
+      const currentMax = matrixEndCh.value || 0;
+      const isSameRangeDomain =
+        currentMin > 0 &&
+        currentMax > 0 &&
+        Math.abs(newMin - currentMin) <= 300 &&
+        Math.abs(newMax - currentMax) <= 300;
+
+      const combinedChannels = new Set<number>();
+
+      if (isSameRangeDomain) {
+        // 同服同一频段的翻页/滚动：收集原有有效频道进行叠加
+        matrixChannelList.value.forEach((ch) => combinedChannels.add(ch));
+        sortedNew.forEach((ch) => combinedChannels.add(ch));
+      } else {
+        // 跨服 / 跨区 / 离谱跨度：重置为新截图的真实频道
+        sortedNew.forEach((ch) => combinedChannels.add(ch));
+      }
+
+      const sortedAll = [...combinedChannels].sort((a, b) => a - b);
+      const start = sortedAll[0];
+      const end = sortedAll[sortedAll.length - 1];
 
       matrixStartCh.value = start;
       matrixEndCh.value = end;
@@ -429,7 +452,11 @@ async function processScreenshotFiles(files: File[]) {
       }
       saveHiddenChannels();
 
-      triggerToast(`🎉 已成功识别并合体 ${files.length} 张截图！包含 ${validChannels.length} 个真实频道 (CH.${start}~CH.${end})`);
+      if (isSameRangeDomain) {
+        triggerToast(`🎉 【翻页滚动合体】成功融合 ${files.length} 张截图！共 ${validChannels.length} 个真实频道 (CH.${start}~CH.${end})`);
+      } else {
+        triggerToast(`✅ 已重新载入频道矩阵 (CH.${start}~CH.${end})，共识别 ${validChannels.length} 个频道`);
+      }
     } else {
       triggerToast('⚠️ 未识别到有效频道号，请检查截图');
     }
